@@ -11,24 +11,21 @@ import InputManager from './InputManager.js';
 import HUDManager from './managers/HUDManager.js';
 import GameStateManager from './managers/GameStateManager.js';
 import GameScreen from './screens/GameScreen.js';
-import CRTEffect from './effects/CRTEffect.js';  // Add this import
+import CRTEffect from './effects/CRTEffect.js';
 import AudioManager from './audio/AudioManager.js';
 import { Strings } from './utils/Localization.js';
 
 class Game {
     constructor() {
-        // Initialize AudioManager first
         this.audioManager = AudioManager.getInstance();
-        // Устанавливаем заголовок вкладки
         document.title = Strings.gameTitle;
-        // Make sure preload is completed
+        
         this.audioManager.preloadGameSounds().then(() => {
             console.log('Audio manager initialization complete');
         }).catch(error => {
             console.error('Failed to initialize audio:', error);
         });
 
-        // Create container div for centering
         this.container = document.createElement('div');
         this.container.style.position = 'fixed';
         this.container.style.width = '100%';
@@ -39,48 +36,39 @@ class Game {
         this.container.style.background = '#000';
         document.body.appendChild(this.container);
 
-        // Fixed dimensions
         this.virtualWidth = 1024;
         this.virtualHeight = 1024;
-
-        // Setup main canvas
         this.canvas = document.getElementById('gameCanvas');
         if (!this.canvas) throw new Error('Canvas not found');
         this.canvas.width = this.virtualWidth;
         this.canvas.height = this.virtualHeight;
         this.canvas.style.display = 'none';
 
-        // Initialize managers with fixed dimensions
+        // --- PREVENT SCROLL/ZOOM ON CANVAS ---
+        // Используем passive: false, чтобы preventDefault работал
+        const preventDefault = (e) => e.preventDefault();
+        this.canvas.addEventListener('touchstart', preventDefault, { passive: false });
+        this.canvas.addEventListener('touchmove', preventDefault, { passive: false });
+        this.canvas.addEventListener('touchend', preventDefault, { passive: false });
+
         this.canvasManager = new CanvasManager(this.canvas);
         this.ctx = this.canvasManager.getContext();
-
-        // Initialize CRT effect with fixed dimensions
         this.crtEffect = new CRTEffect(this.canvas, this.container);
-
-        // Then initialize other managers that need the context
         this.inputManager = new InputManager();
         this.gameState = new GameStateManager();
         this.hudManager = new HUDManager(this.ctx, this.virtualWidth, this.virtualHeight);
 
-        // Make the game instance globally accessible
         window.game = this;
 
-        this.ctx = this.canvasManager.getContext();
-        
-        // Remove setupCanvas() and bindEvents() calls
-        // Force a resize event to immediately update offsets.
         window.dispatchEvent(new Event('resize'));
         
-        // Virtual resolution setup - now square
         this.scale = 1;
         this.offsetX = 0;
         this.offsetY = 0;
-        
-        this.viewportWidth = 1024;  // Changed from 1920 to match new virtual width
+        this.viewportWidth = 1024;
         this.checkerSize = 64;
-        
         this.lastTime = 0;
-        // Create the ImageBackgroundScroller entity instead of BackgroundScroller
+        
         this.bgScroller = new ImageBackgroundScroller(this.ctx, {
             virtualWidth: this.virtualWidth,
             virtualHeight: this.virtualHeight,
@@ -90,12 +78,7 @@ class Game {
             offsetY: this.offsetY
         });
 
-        // Initialize screens BEFORE setting up input handlers
         this.screens = {
-            startup: new StartupScreen(this.ctx, {
-                virtualWidth: this.virtualWidth,
-                virtualHeight: this.virtualHeight
-            }),
             intro: new IntroScreen(this.ctx, {
                 virtualWidth: this.virtualWidth,
                 virtualHeight: this.virtualHeight,
@@ -112,12 +95,10 @@ class Game {
         
         this.currentScreen = 'intro';
         
-        // Register input handlers
         this.inputManager.setDebugHandler(() => {
             this.debugWindow.visible = !this.debugWindow.visible;
         });
 
-        // Register screen handlers
         Object.entries(this.screens).forEach(([name, screen]) => {
             if (screen && screen.handleInput) {
                 this.inputManager.registerScreen(name, (key) => {
@@ -130,35 +111,72 @@ class Game {
             }
         });
 
-        // Set initial screen
         this.inputManager.setCurrentScreen('intro');
-
-        // Start the game loop
-        this.startGameLoop();
-
-        // Initialize music player without starting it
         this.musicPlayer = new MusicPlayer();
-        // Create persistent offscreen canvas for player tinting effects
         this.offCanvasCache = document.createElement('canvas');
         this.debugWindow = new DebugWindow();
+        this.gameReadySent = false;
+        this.isPaused = false;
+
+        this.startGameLoop();
+
+        // --- PAUSE LOGIC ---
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                this.onPause();
+            } else {
+                this.onResume();
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('blur', () => this.onPause());
+        window.addEventListener('focus', () => this.onResume());
+    }
+
+    onPause() {
+        if (this.isPaused) return; // Уже на паузе
+        console.log('Game Paused');
+        this.isPaused = true;
+        
+        // 1. Глушим глобальный аудио контекст (SFX)
+        if (this.audioManager && this.audioManager.context) {
+            this.audioManager.context.suspend();
+        }
+
+        // 2. Сообщаем текущему экрану о паузе (для Intro музыки)
+        if (this.screens[this.currentScreen] && this.screens[this.currentScreen].onPause) {
+            this.screens[this.currentScreen].onPause();
+        }
+    }
+
+    onResume() {
+        if (!this.isPaused) return; // Уже работает
+        console.log('Game Resumed');
+        this.isPaused = false;
+        
+        // 1. Восстанавливаем контекст
+        if (this.audioManager && this.audioManager.context) {
+            this.audioManager.context.resume();
+        }
+
+        // 2. Сообщаем экрану
+        if (this.screens[this.currentScreen] && this.screens[this.currentScreen].onResume) {
+            this.screens[this.currentScreen].onResume();
+        }
     }
 
     resize() {
-        // Get scale to fit screen while maintaining 1:1 ratio
         const minDimension = Math.min(window.innerWidth, window.innerHeight) - 40;
         const scale = minDimension / 1024;
-
-        // Update CRT effect scale only
         if (this.crtEffect) {
             this.crtEffect.setScale(scale);
         }
     }
 
     gameOver() {
-        // Реклама
         if (window.showAd) window.showAd();
 
-        // Создаем экран смерти
         this.screens.intro = new IntroScreen(this.ctx, {
             virtualWidth: this.virtualWidth,
             virtualHeight: this.virtualHeight,
@@ -168,26 +186,21 @@ class Game {
             highScore: this.gameState.highScore
         });
         
-        // Переключаемся (музыка выключится внутри switchScreen)
         this.switchScreen('intro');
     }
 
     switchScreen(screenName) {
-        // Cleanup current screen (Intro выключит xeno-war сам)
         if (this.screens[this.currentScreen]?.cleanup) {
             this.screens[this.currentScreen].cleanup();
         }
 
-        // Если переходим в МЕНЮ (Intro) или ГЕЙМОВЕР -> Глушим боевой Фонк
         if (screenName === 'intro') {
             if (this.musicPlayer) {
                 this.musicPlayer.stop();
             }
         }
 
-        // Special handling for game screen
         if (screenName === 'game') {
-            // Always create a new game screen instance
             this.screens.game = new GameScreen(this.ctx, {
                 virtualWidth: this.virtualWidth,
                 virtualHeight: this.virtualHeight,
@@ -196,7 +209,6 @@ class Game {
                 audioManager: this.audioManager
             });
 
-            // ЗАПУСКАЕМ БОЕВОЙ ФОНК ТОЛЬКО ЗДЕСЬ
             if (this.musicPlayer) {
                 this.musicPlayer.playTrack(0);
             }
@@ -210,10 +222,7 @@ class Game {
         const delta = (timestamp - (this.lastTime || timestamp)) / 1000;
         this.lastTime = timestamp;
         
-        // Update game state
         this.gameState.update(delta);
-        
-        // Update current screen
         this.screens[this.currentScreen]?.update(delta);
         
         if(this.debugWindow.visible) {
@@ -223,11 +232,8 @@ class Game {
 
     draw() {
         this.canvasManager.clearScreen();
-
-        // Draw current screen
         this.screens[this.currentScreen]?.draw();
         
-        // Draw HUD if in game screen
         if (this.currentScreen === 'game') {
             this.hudManager.draw(
                 this.gameState.lives,
@@ -240,14 +246,23 @@ class Game {
             this.debugWindow.draw(this.ctx);
         }
 
-        // Render CRT effect last
         this.crtEffect.render(performance.now());
+
+        if (!this.gameReadySent) {
+            if (window.ysdk && window.ysdk.features && window.ysdk.features.LoadingAPI) {
+                window.ysdk.features.LoadingAPI.ready();
+                console.log('Yandex Game Ready sent (First Frame)');
+            }
+            this.gameReadySent = true;
+        }
     }
 
     startGameLoop() {
         const loop = (timestamp) => {
-            this.update(timestamp);
-            this.draw();
+            if (!this.isPaused) {
+                this.update(timestamp);
+                this.draw();
+            }
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);

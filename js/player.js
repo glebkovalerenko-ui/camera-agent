@@ -59,6 +59,28 @@ class Player {
                     break;
             }
         });
+
+        window.addEventListener('touchstart', (e) => {
+            const touchX = e.touches[0].clientX;
+            const halfWidth = window.innerWidth / 2;
+            
+            if (touchX < halfWidth) {
+                this.movingLeft = true;
+                this.movingRight = false;
+            } else {
+                this.movingRight = true;
+                this.movingLeft = false;
+            }
+            // Автострельба на мобилках или тап двумя пальцами?
+            // Проще сделать автострельбу при движении
+            this.isFiring = true; 
+        });
+
+        window.addEventListener('touchend', () => {
+            this.movingLeft = false;
+            this.movingRight = false;
+            this.isFiring = false;
+        });
     }
 
     handleInput(key) {

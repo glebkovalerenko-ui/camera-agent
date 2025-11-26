@@ -27,21 +27,21 @@ class Alien {
     draw() {
         const ctx = this.ctx;
         if (this.img.complete) {
-            // Draw drop shadow (same as player)
             ctx.save();
-            ctx.globalAlpha = 0.7;          // Same opacity as player
-            ctx.filter = 'blur(15px) brightness(0)';
-            ctx.drawImage(
-                this.img,
-                this.x + 20,               // Offset x (+20)
-                this.y - 50,               // Offset y (-50)
-                this.width * 1.2,          // Scaled width (1.2)
-                this.height * 1.2          // Scaled height (1.2)
-            );
-            ctx.restore();
-            // Draw original alien sprite
+            
+            // --- FIX FOR IOS GHOSTING ---
+            // Вместо рисования второй картинки с фильтром, используем нативную тень
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.6)'; // Цвет тени
+            ctx.shadowBlur = 10;                    // Размытие
+            ctx.shadowOffsetX = 15;                 // Смещение по X
+            ctx.shadowOffsetY = 30;                 // Смещение по Y (тень внизу)
+            
+            // Рисуем унитаз один раз, тень появится сама
             ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
+            
+            ctx.restore();
         } else {
+            // Заглушка, если картинка не прогрузилась
             ctx.fillStyle = '#00ff00';
             ctx.fillRect(this.x, this.y, this.width, this.height);
         }

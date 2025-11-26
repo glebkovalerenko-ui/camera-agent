@@ -163,20 +163,11 @@ class GameScreen {
     drawPlayer() {
         if (!this.player.img.complete) return;
 
-        // Draw player shadow
-        this.ctx.save();
-        this.ctx.globalAlpha = 0.7;
-        this.ctx.filter = 'blur(15px) brightness(0)';
-        this.ctx.drawImage(
-            this.player.img,
-            this.player.x + 20,
-            this.player.y - 50,
-            this.player.width * 1.2,
-            this.player.height * 1.2
-        );
-        this.ctx.restore();
-
-        // Draw player with background color effect
+        // --- FIX FOR IOS GHOSTING ---
+        // Удаляем блок с ctx.filter = 'blur...' 
+        // Теперь мы настраиваем тень перед отрисовкой самого игрока
+        
+        // 1. Подготовка "подкрашенного" спрайта (старая логика tinting)
         const bgColor = this.bgScroller.getColorAt(
             this.player.x + this.player.width/2,
             this.player.y + this.player.height
@@ -186,16 +177,31 @@ class GameScreen {
         offCanvas.width = this.player.img.width;
         offCanvas.height = this.player.img.height;
         const offCtx = offCanvas.getContext('2d');
+        
+        // Рисуем спрайт в буфер
         offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
         offCtx.drawImage(this.player.img, 0, 0);
+        
+        // Накладываем цвет фона (Tint)
         offCtx.globalCompositeOperation = 'source-atop';
         offCtx.fillStyle = `rgba(${bgColor.r}, ${bgColor.g}, ${bgColor.b}, 0.33)`;
         offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
 
+        // 2. Рисуем игрока на главный экран С ТЕНЬЮ
         this.ctx.save();
+        
+        // Добавляем безопасную тень
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.shadowBlur = 15;
+        this.ctx.shadowOffsetX = 20;
+        this.ctx.shadowOffsetY = 40;
+
+        // Прозрачность для неуязвимости
         if (this.gameState.playerInvulnerable) {
             this.ctx.globalAlpha = this.gameState.getInvulnerabilityAlpha();
         }
+
+        // Рисуем итоговый спрайт
         this.ctx.drawImage(
             offCanvas,
             this.player.x,
