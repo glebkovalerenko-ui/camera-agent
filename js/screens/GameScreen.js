@@ -1,7 +1,7 @@
 import Player from '../player.js';
 import { ParticleEngine, LaserEngine } from '../particleEngine.js';
 import PatternFormation from '../PatternFormation.js';
-import ImageBackgroundScroller from '../imageBackgroundScroller.js';  // Add this import
+import ImageBackgroundScroller from '../imageBackgroundScroller.js';
 
 class GameScreen {
     constructor(ctx, options = {}) {
@@ -10,24 +10,13 @@ class GameScreen {
         this.virtualHeight = options.virtualHeight;
         this.gameState = options.gameState;
         this.audioManager = options.audioManager;
+        this.bgScroller = options.bgScroller;
         
-        this.player = new Player(ctx, {
-            virtualWidth: options.virtualWidth,
-            virtualHeight: options.virtualHeight,
-            audioManager: options.audioManager
-        });
-
-        this.bgScroller = new ImageBackgroundScroller(ctx, {
-            virtualWidth: options.virtualWidth,
-            virtualHeight: options.virtualHeight,
-            viewportWidth: options.virtualWidth,
-            checkerSize: 64,
-            scrollSpeed: 100,
-            offsetY: 0
-        });
-
+        // Callback для надежного переключения
+        this.onGameOver = options.onGameOver || (() => console.error("No onGameOver provided"));
+        
+        this.isGameOver = false; // Локальный флаг остановки
         this.initializeGameObjects();
-        this.offCanvasCache = document.createElement('canvas');
     }
 
     initializeGameObjects() {
@@ -37,14 +26,12 @@ class GameScreen {
             speed: 300
         });
 
-        // Initialize particle and laser engines
         this.particleEngine = new ParticleEngine(this.ctx);
         this.particleEngine2 = new ParticleEngine(this.ctx);
         this.particleEngine3 = new ParticleEngine(this.ctx);
         this.laserEngineLeft = new LaserEngine(this.ctx, this.audioManager);
         this.laserEngineRight = new LaserEngine(this.ctx, this.audioManager);
 
-        // Initialize formation with points callback
         this.formation = new PatternFormation(this.ctx, {
             virtualWidth: this.virtualWidth,
             virtualHeight: this.virtualHeight,
@@ -55,10 +42,13 @@ class GameScreen {
     }
 
     handleInput(key) {
+        if (this.isGameOver) return; // Блокируем ввод при смерти
         this.player.handleInput(key);
     }
 
     update(delta) {
+        if (this.isGameOver) return; // ОСТАНАВЛИВАЕМ ВСЮ ЛОГИКУ
+
         this.bgScroller.update(delta);
         this.player.update(delta);
         
@@ -68,19 +58,31 @@ class GameScreen {
     }
 
     updateParticles(delta) {
-        // Update engine particles
+        // Центр игрока по горизонтали
         const centerX = this.player.x + this.player.width / 2;
-        const engineY = this.player.y + this.player.height - 25;
         
-        this.particleEngine.setEmitter(centerX, engineY);
-        this.particleEngine2.setEmitter(centerX - 21, engineY - 20);
-        this.particleEngine3.setEmitter(centerX + 21, engineY - 20);
+        // Базовая точка Y (низ игрока минус небольшой отступ)
+        const engineY = this.player.y + this.player.height; 
         
-        this.particleEngine.update(delta);
+        // --- ИЗМЕНЕНИЯ ЗДЕСЬ ---
+        
+        // 1. Убираем центральный двигатель (комментируем)
+        // this.particleEngine.setEmitter(centerX, engineY - 25);
+        
+        // 2. Поднимаем боковые двигатели выше
+        // Было: engineY - 20. Ставим: engineY - 60 (чем больше число, тем ВЫШЕ огонь)
+        // Подбери число под свой спрайт
+        const heightOffset = 100; 
+        
+        this.particleEngine2.setEmitter(centerX - 21, engineY - heightOffset);
+        this.particleEngine3.setEmitter(centerX + 21, engineY - heightOffset);
+        
+        // Обновляем только нужные
+        // this.particleEngine.update(delta); // Тоже комментируем
         this.particleEngine2.update(delta);
         this.particleEngine3.update(delta);
 
-        // Update lasers
+        // ... дальше код лазеров без изменений ...
         const firing = this.player.isFiring;
         this.laserEngineLeft.setFiring(firing);
         this.laserEngineRight.setFiring(firing);
@@ -103,7 +105,6 @@ class GameScreen {
                 virtualWidth: this.virtualWidth,
                 virtualHeight: this.virtualHeight,
                 pattern: 'infinity',
-                bgScroller: this.bgScroller,
                 difficulty: this.formation.difficulty + 1,
                 audioManager: this.audioManager,
                 onPointsScored: (points) => this.addPoints(points)
@@ -112,21 +113,28 @@ class GameScreen {
     }
 
     checkCollisions() {
-        // Check player collisions with formation lasers
+        if (this.isGameOver) return;
+
+        // 1. Игрок получил урон от лазера
         for (const laser of this.formation.lasers) {
-            if (this.player.checkCollision(laser)) {
+            if (laser.life > 0 && this.player.checkCollision(laser)) {
                 this.handlePlayerHit();
                 laser.life = 0;
-                break;
+                if (this.isGameOver) return; // Выходим сразу, если умерли
             }
         }
 
-        // Check lasers collision with formation
+        // 2. Столкновение с врагом
+        if (this.formation.checkCollision(this.player.x + this.player.width/2, this.player.y + this.player.height/2)) {
+            this.handlePlayerHit();
+            if (this.isGameOver) return;
+        }
+
+        // 3. Стрельба игрока
         [this.laserEngineLeft, this.laserEngineRight].forEach(engine => {
             engine.particles.forEach(laser => {
-                if (this.formation.checkCollision(laser.x, laser.y)) {
+                if (laser.life > 0 && this.formation.checkCollision(laser.x, laser.y)) {
                     laser.life = 0;
-                    this.addPoints(100);
                 }
             });
         });
@@ -137,25 +145,24 @@ class GameScreen {
     }
 
     handlePlayerHit() {
-        if (this.gameState.handlePlayerHit()) {
-            window.game.gameOver();
+        const isDead = this.gameState.handlePlayerHit();
+        console.log(`Player Hit! Lives: ${this.gameState.lives}`);
+
+        if (isDead) {
+            this.isGameOver = true;
+            console.log("Dead! Calling onGameOver...");
+            this.onGameOver();
         }
     }
 
     draw() {
-        // Draw background
         this.bgScroller.draw();
-        
-        // Draw player with effects
         this.drawPlayer();
-        
-        // Draw formation
         this.formation.draw();
         
-        // Draw particle effects
         this.laserEngineLeft.draw();
         this.laserEngineRight.draw();
-        this.particleEngine.draw();
+        //this.particleEngine.draw();
         this.particleEngine2.draw();
         this.particleEngine3.draw();
     }
@@ -163,52 +170,12 @@ class GameScreen {
     drawPlayer() {
         if (!this.player.img.complete) return;
 
-        // --- FIX FOR IOS GHOSTING ---
-        // Удаляем блок с ctx.filter = 'blur...' 
-        // Теперь мы настраиваем тень перед отрисовкой самого игрока
-        
-        // 1. Подготовка "подкрашенного" спрайта (старая логика tinting)
-        const bgColor = this.bgScroller.getColorAt(
-            this.player.x + this.player.width/2,
-            this.player.y + this.player.height
-        );
-
-        const offCanvas = this.offCanvasCache;
-        offCanvas.width = this.player.img.width;
-        offCanvas.height = this.player.img.height;
-        const offCtx = offCanvas.getContext('2d');
-        
-        // Рисуем спрайт в буфер
-        offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
-        offCtx.drawImage(this.player.img, 0, 0);
-        
-        // Накладываем цвет фона (Tint)
-        offCtx.globalCompositeOperation = 'source-atop';
-        offCtx.fillStyle = `rgba(${bgColor.r}, ${bgColor.g}, ${bgColor.b}, 0.33)`;
-        offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
-
-        // 2. Рисуем игрока на главный экран С ТЕНЬЮ
         this.ctx.save();
-        
-        // Добавляем безопасную тень
-        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-        this.ctx.shadowBlur = 15;
-        this.ctx.shadowOffsetX = 20;
-        this.ctx.shadowOffsetY = 40;
-
-        // Прозрачность для неуязвимости
         if (this.gameState.playerInvulnerable) {
-            this.ctx.globalAlpha = this.gameState.getInvulnerabilityAlpha();
+            const flash = Math.floor(Date.now() / 100) % 2 === 0;
+            this.ctx.globalAlpha = flash ? 0.3 : 1.0;
         }
-
-        // Рисуем итоговый спрайт
-        this.ctx.drawImage(
-            offCanvas,
-            this.player.x,
-            this.player.y,
-            this.player.width,
-            this.player.height
-        );
+        this.ctx.drawImage(this.player.img, this.player.x, this.player.y, this.player.width, this.player.height);
         this.ctx.restore();
     }
 }

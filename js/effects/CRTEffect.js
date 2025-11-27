@@ -3,61 +3,63 @@ import VideoRecorder from '../utils/VideoRecorder.js';
 class CRTEffect {
     constructor(targetCanvas, container, audioManager = null) {
         this.gameCanvas = targetCanvas;
-
-        // Create WebGL canvas with fixed 1024x1024 dimensions
+        
+        // Создаем WebGL канвас
         this.glCanvas = document.createElement('canvas');
+        // Фиксируем внутреннее разрешение 1:1 с игровым
         this.glCanvas.width = 1024;
         this.glCanvas.height = 1024;
         
-        // Force exact pixel dimensions in style
-        this.glCanvas.style.width = '1024px';
-        this.glCanvas.style.height = '1024px';
-        this.glCanvas.style.display = 'block';
+        // Стили для наложения поверх игры
+        this.glCanvas.style.position = 'absolute';
+        this.glCanvas.style.pointerEvents = 'none'; // Клики проходят сквозь
+        this.glCanvas.style.transformOrigin = '0 0';
         
-        // Center in container
         container.appendChild(this.glCanvas);
 
-        // Init WebGL with correct size
         this.gl = this.glCanvas.getContext('webgl2', {
             premultipliedAlpha: false,
-            alpha: false
+            alpha: false,
+            antialias: false
         });
 
-        // Load CRT configuration
-        this.loadConfig().then(() => {
-            this.createShaders();
-            this.createBuffers();
-            this.createTexture();
-        });
+        if (!this.gl) throw new Error("WebGL2 not supported");
 
-        // Add video recorder with audio manager
+        this.config = {
+            scanline: { intensity: 0.28, count: 1024.0, rollingSpeed: 10.3 },
+            screenEffects: { vignetteStrength: 0.22, brightness: 1.1, curvature: 0.1 },
+            colorEffects: { rgbShift: 0.0015 },
+            blur: { horizontal: 0.4 },
+            distortion: { flickerSpeed: 8.0, flickerIntensity: 0.03, noiseAmount: 0.05 }
+        };
+
+        this.createShaders();
+        this.createBuffers();
+        this.createTexture();
+        this.loadConfig();
+
         this.videoRecorder = new VideoRecorder(this.glCanvas, audioManager);
         this.setupRecordingControls();
     }
 
+    // Синхронизация CSS-размеров с основным канвасом
+    syncStyle(sourceCanvas) {
+        this.glCanvas.style.width = sourceCanvas.style.width;
+        this.glCanvas.style.height = sourceCanvas.style.height;
+        this.glCanvas.style.left = sourceCanvas.style.left;
+        this.glCanvas.style.top = sourceCanvas.style.top;
+        this.glCanvas.style.display = sourceCanvas.style.display === 'none' ? 'none' : 'block';
+    }
+
     async loadConfig() {
         try {
-            // Update path to use the correct location in dist
             const response = await fetch('./config/crt-effect.json');
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            this.config = await response.json();
-            console.log('CRT config loaded:', this.config);
-        } catch (err) {
-            console.error('Failed to load CRT config:', err);
-            // Fallback to default values
-            this.config = {
-                scanline: { intensity: 0.18, count: 1024.0, rollingSpeed: 0.3 },
-                screenEffects: { vignetteStrength: 0.22, brightness: 1.1, curvature: 0.1 },
-                colorEffects: { rgbShift: 0.0015 },
-                blur: { horizontal: 0.4 },
-                distortion: { flickerSpeed: 8.0, flickerIntensity: 0.03 }
-            };
-        }
+            if (response.ok) this.config = await response.json();
+        } catch (err) {}
     }
 
     createShaders() {
+        // Простой Vertex Shader
         const vsSource = `#version 300 es
             in vec2 a_position;
             in vec2 a_texCoord;
@@ -67,13 +69,14 @@ class CRTEffect {
                 v_texCoord = a_texCoord;
             }`;
 
+        // Fragment Shader (без изменений логики, только uniform map)
         const fsSource = `#version 300 es
             precision highp float;
             
             uniform sampler2D u_image;
-            uniform vec2 u_resolution;
             uniform float u_time;
             
+            // Config uniforms
             uniform float u_scanlineIntensity;
             uniform float u_scanlineCount;
             uniform float u_rollingSpeed;
@@ -81,7 +84,6 @@ class CRTEffect {
             uniform float u_brightness;
             uniform float u_curvature;
             uniform float u_rgbShift;
-            uniform float u_horizontalBlur;
             uniform float u_flickerSpeed;
             uniform float u_flickerIntensity;
             uniform float u_noiseAmount;
@@ -92,56 +94,44 @@ class CRTEffect {
             float rand(vec2 co) {
                 return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
             }
-
-            vec3 sampleWithBlur(sampler2D tex, vec2 uv, float blur) {
-                vec3 color = vec3(0.0);
-                float total = 0.0;
-                for(float i = -2.0; i <= 2.0; i++) {
-                    float weight = 1.0 - abs(i) / 3.0;
-                    color += texture(tex, uv + vec2(i * blur / u_resolution.x, 0.0)).rgb * weight;
-                    total += weight;
-                }
-                return color / total;
-            }
             
             void main() {
                 vec2 uv = v_texCoord;
                 
-                // Screen curvature
+                // Curvature
                 vec2 curve_uv = uv * 2.0 - 1.0;
                 vec2 offset = curve_uv.yx * curve_uv.yx * vec2(u_curvature);
                 curve_uv += curve_uv * offset;
                 uv = curve_uv * 0.5 + 0.5;
 
-                // Early exit if outside bounds
+                // Черные края за пределами изгиба
                 if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
                     outColor = vec4(0.0, 0.0, 0.0, 1.0);
                     return;
                 }
 
-                // Rolling scanline
+                // Scanline
                 float scanline = sin(uv.y * u_scanlineCount + u_time * u_rollingSpeed);
                 scanline = scanline * 0.5 + 0.5;
-                scanline = pow(scanline, 0.5);
 
-                // RGB shift
-                vec2 rUV = uv - vec2(u_rgbShift * sin(u_time), 0.0);
+                // RGB Shift
+                float shift = u_rgbShift;
+                vec2 rUV = uv - vec2(shift, 0.0);
                 vec2 gUV = uv;
-                vec2 bUV = uv + vec2(u_rgbShift * sin(u_time), 0.0);
+                vec2 bUV = uv + vec2(shift, 0.0);
 
-                // Sample with blur
                 vec3 color;
-                color.r = sampleWithBlur(u_image, rUV, u_horizontalBlur).r;
-                color.g = sampleWithBlur(u_image, gUV, u_horizontalBlur).g;
-                color.b = sampleWithBlur(u_image, bUV, u_horizontalBlur).b;
+                color.r = texture(u_image, rUV).r;
+                color.g = texture(u_image, gUV).g;
+                color.b = texture(u_image, bUV).b;
 
-                // Apply effects
+                // Effects chain
                 color *= u_brightness;
                 color *= 1.0 - (scanline * u_scanlineIntensity);
                 color *= 1.0 - length(curve_uv) * u_vignetteStrength;
                 color *= 1.0 - (sin(u_time * u_flickerSpeed) * u_flickerIntensity);
                 
-                // Add noise
+                // Noise
                 float noise = rand(uv + vec2(u_time * 0.001));
                 color += (noise - 0.5) * u_noiseAmount;
 
@@ -150,17 +140,13 @@ class CRTEffect {
 
         const vertexShader = this.createShader(this.gl.VERTEX_SHADER, vsSource);
         const fragmentShader = this.createShader(this.gl.FRAGMENT_SHADER, fsSource);
-        
         this.program = this.createProgram(vertexShader, fragmentShader);
-        
-        // Get locations
+
         this.positionLoc = this.gl.getAttribLocation(this.program, 'a_position');
         this.texCoordLoc = this.gl.getAttribLocation(this.program, 'a_texCoord');
-        this.resolutionLoc = this.gl.getUniformLocation(this.program, 'u_resolution');
         this.timeLoc = this.gl.getUniformLocation(this.program, 'u_time');
-
-        // Get additional uniform locations
-        this.uniformLocations = {
+        
+        this.uLocs = {
             scanlineIntensity: this.gl.getUniformLocation(this.program, 'u_scanlineIntensity'),
             scanlineCount: this.gl.getUniformLocation(this.program, 'u_scanlineCount'),
             rollingSpeed: this.gl.getUniformLocation(this.program, 'u_rollingSpeed'),
@@ -168,7 +154,6 @@ class CRTEffect {
             brightness: this.gl.getUniformLocation(this.program, 'u_brightness'),
             curvature: this.gl.getUniformLocation(this.program, 'u_curvature'),
             rgbShift: this.gl.getUniformLocation(this.program, 'u_rgbShift'),
-            horizontalBlur: this.gl.getUniformLocation(this.program, 'u_horizontalBlur'),
             flickerSpeed: this.gl.getUniformLocation(this.program, 'u_flickerSpeed'),
             flickerIntensity: this.gl.getUniformLocation(this.program, 'u_flickerIntensity'),
             noiseAmount: this.gl.getUniformLocation(this.program, 'u_noiseAmount')
@@ -176,26 +161,12 @@ class CRTEffect {
     }
 
     createBuffers() {
-        // Vertex positions
-        const positions = new Float32Array([
-            -1, -1,  // bottom left
-             1, -1,  // bottom right
-            -1,  1,  // top left
-             1,  1,  // top right
-        ]);
-        
+        const positions = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
         this.positionBuffer = this.gl.createBuffer();
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.positionBuffer);
         this.gl.bufferData(this.gl.ARRAY_BUFFER, positions, this.gl.STATIC_DRAW);
 
-        // Texture coordinates
-        const texCoords = new Float32Array([
-            0, 1,  // bottom left
-            1, 1,  // bottom right
-            0, 0,  // top left
-            1, 0,  // top right
-        ]);
-        
+        const texCoords = new Float32Array([0, 1, 1, 1, 0, 0, 1, 0]);
         this.texCoordBuffer = this.gl.createBuffer();
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.texCoordBuffer);
         this.gl.bufferData(this.gl.ARRAY_BUFFER, texCoords, this.gl.STATIC_DRAW);
@@ -214,64 +185,46 @@ class CRTEffect {
         const shader = this.gl.createShader(type);
         this.gl.shaderSource(shader, source);
         this.gl.compileShader(shader);
-        if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
-            throw new Error(this.gl.getShaderInfoLog(shader));
-        }
+        if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) return null;
         return shader;
     }
 
-    createProgram(vertexShader, fragmentShader) {
+    createProgram(vs, fs) {
+        if (!vs || !fs) return null;
         const program = this.gl.createProgram();
-        this.gl.attachShader(program, vertexShader);
-        this.gl.attachShader(program, fragmentShader);
+        this.gl.attachShader(program, vs);
+        this.gl.attachShader(program, fs);
         this.gl.linkProgram(program);
-        if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) {
-            throw new Error(this.gl.getProgramInfoLog(program));
-        }
+        if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) return null;
         return program;
     }
 
-    setScale(scale) {
-        this.glCanvas.style.transform = `scale(${scale})`;
-    }
-
     render(time) {
-        // ЗАЩИТА: Если шейдеры или текстура не готовы — выходим
         if (!this.program || !this.texture) return;
-
         const gl = this.gl;
         
-        // Ensure viewport matches fixed canvas size
         gl.viewport(0, 0, 1024, 1024);
-        gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
-
         gl.useProgram(this.program);
 
-        // Upload game canvas as texture
         gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        // Берем изображение с ИГРОВОГО канваса (который 1024x1024)
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.gameCanvas);
 
-        // Set uniforms
-        gl.uniform2f(this.resolutionLoc, gl.canvas.width, gl.canvas.height);
         gl.uniform1f(this.timeLoc, time * 0.001);
 
-        // Set CRT effect uniforms from config
-        if (this.config) {  // Add check for config
-            gl.uniform1f(this.uniformLocations.scanlineIntensity, this.config.scanline.intensity);
-            gl.uniform1f(this.uniformLocations.scanlineCount, this.config.scanline.count);
-            gl.uniform1f(this.uniformLocations.rollingSpeed, this.config.scanline.rollingSpeed);
-            gl.uniform1f(this.uniformLocations.vignetteStrength, this.config.screenEffects.vignetteStrength);
-            gl.uniform1f(this.uniformLocations.brightness, this.config.screenEffects.brightness);
-            gl.uniform1f(this.uniformLocations.curvature, this.config.screenEffects.curvature);
-            gl.uniform1f(this.uniformLocations.rgbShift, this.config.colorEffects.rgbShift);
-            gl.uniform1f(this.uniformLocations.horizontalBlur, this.config.blur.horizontal);
-            gl.uniform1f(this.uniformLocations.flickerSpeed, this.config.distortion.flickerSpeed);
-            gl.uniform1f(this.uniformLocations.flickerIntensity, this.config.distortion.flickerIntensity);
-            gl.uniform1f(this.uniformLocations.noiseAmount, this.config.distortion.noiseAmount);
-        }
+        const c = this.config;
+        gl.uniform1f(this.uLocs.scanlineIntensity, c.scanline.intensity);
+        gl.uniform1f(this.uLocs.scanlineCount, c.scanline.count);
+        gl.uniform1f(this.uLocs.rollingSpeed, c.scanline.rollingSpeed);
+        gl.uniform1f(this.uLocs.vignetteStrength, c.screenEffects.vignetteStrength);
+        gl.uniform1f(this.uLocs.brightness, c.screenEffects.brightness);
+        gl.uniform1f(this.uLocs.curvature, c.screenEffects.curvature);
+        gl.uniform1f(this.uLocs.rgbShift, c.colorEffects.rgbShift);
+        gl.uniform1f(this.uLocs.flickerSpeed, c.distortion.flickerSpeed);
+        gl.uniform1f(this.uLocs.flickerIntensity, c.distortion.flickerIntensity);
+        gl.uniform1f(this.uLocs.noiseAmount, c.distortion.noiseAmount);
 
-        // Set attributes
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         gl.enableVertexAttribArray(this.positionLoc);
         gl.vertexAttribPointer(this.positionLoc, 2, gl.FLOAT, false, 0, 0);
@@ -280,18 +233,13 @@ class CRTEffect {
         gl.enableVertexAttribArray(this.texCoordLoc);
         gl.vertexAttribPointer(this.texCoordLoc, 2, gl.FLOAT, false, 0, 0);
 
-        // Draw
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
     setupRecordingControls() {
-        document.addEventListener('keydown', (e) => {
+        window.addEventListener('keydown', (e) => {
             if (e.key.toLowerCase() === 'r') {
-                if (!this.videoRecorder.isRecording()) {
-                    this.videoRecorder.startRecording();
-                } else {
-                    this.videoRecorder.stopRecording();
-                }
+                this.videoRecorder.isRecording() ? this.videoRecorder.stopRecording() : this.videoRecorder.startRecording();
             }
         });
     }

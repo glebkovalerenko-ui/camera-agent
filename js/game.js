@@ -17,165 +17,174 @@ import { Strings } from './utils/Localization.js';
 
 class Game {
     constructor() {
+        console.log('Game System Booting...');
         this.audioManager = AudioManager.getInstance();
         document.title = Strings.gameTitle;
         
-        this.audioManager.preloadGameSounds().then(() => {
-            console.log('Audio manager initialization complete');
-        }).catch(error => {
-            console.error('Failed to initialize audio:', error);
-        });
+        this.audioManager.preloadGameSounds().catch(e => console.warn(e));
 
         this.container = document.createElement('div');
-        this.container.style.position = 'fixed';
-        this.container.style.width = '100%';
-        this.container.style.height = '100%';
-        this.container.style.display = 'flex';
-        this.container.style.justifyContent = 'center';
-        this.container.style.alignItems = 'center';
-        this.container.style.background = '#000';
+        this.container.style.cssText = 'position:fixed;width:100%;height:100%;display:flex;justify-content:center;align-items:center;background:#000;overflow:hidden;';
         document.body.appendChild(this.container);
 
         this.virtualWidth = 1024;
         this.virtualHeight = 1024;
+        
         this.canvas = document.getElementById('gameCanvas');
-        if (!this.canvas) throw new Error('Canvas not found');
-        this.canvas.width = this.virtualWidth;
-        this.canvas.height = this.virtualHeight;
-        this.canvas.style.display = 'none';
+        this.canvas.style.opacity = '0'; 
+        this.container.appendChild(this.canvas);
 
-        // --- PREVENT SCROLL/ZOOM ON CANVAS ---
-        // Используем passive: false, чтобы preventDefault работал
-        const preventDefault = (e) => e.preventDefault();
-        this.canvas.addEventListener('touchstart', preventDefault, { passive: false });
-        this.canvas.addEventListener('touchmove', preventDefault, { passive: false });
-        this.canvas.addEventListener('touchend', preventDefault, { passive: false });
+        ['touchstart', 'touchmove', 'touchend'].forEach(evt => {
+            this.canvas.addEventListener(evt, (e) => e.preventDefault(), { passive: false });
+        });
 
         this.canvasManager = new CanvasManager(this.canvas);
         this.ctx = this.canvasManager.getContext();
-        this.crtEffect = new CRTEffect(this.canvas, this.container);
+
+        try {
+            this.crtEffect = new CRTEffect(this.canvas, this.container);
+        } catch (e) {
+            console.warn("CRT Shader disabled", e);
+            this.canvas.style.opacity = '1';
+            this.crtEffect = null;
+        }
+
         this.inputManager = new InputManager();
         this.gameState = new GameStateManager();
         this.hudManager = new HUDManager(this.ctx, this.virtualWidth, this.virtualHeight);
-
-        window.game = this;
-
-        window.dispatchEvent(new Event('resize'));
         
-        this.scale = 1;
-        this.offsetX = 0;
-        this.offsetY = 0;
-        this.viewportWidth = 1024;
-        this.checkerSize = 64;
-        this.lastTime = 0;
+        window.game = this;
         
         this.bgScroller = new ImageBackgroundScroller(this.ctx, {
             virtualWidth: this.virtualWidth,
             virtualHeight: this.virtualHeight,
-            viewportWidth: this.viewportWidth,
-            checkerSize: this.checkerSize,
-            scrollSpeed: 100,
-            offsetY: this.offsetY
+            scrollSpeed: 100
         });
 
         this.screens = {
+            startup: new StartupScreen(this.ctx, {
+                virtualWidth: this.virtualWidth,
+                virtualHeight: this.virtualHeight
+            }),
             intro: new IntroScreen(this.ctx, {
                 virtualWidth: this.virtualWidth,
                 virtualHeight: this.virtualHeight,
                 bgScroller: this.bgScroller
             }),
-            game: new GameScreen(this.ctx, {
-                virtualWidth: this.virtualWidth,
-                virtualHeight: this.virtualHeight,
-                bgScroller: this.bgScroller,
-                gameState: this.gameState,
-                audioManager: this.audioManager
-            })
+            game: null 
         };
-        
-        this.currentScreen = 'intro';
-        
-        this.inputManager.setDebugHandler(() => {
-            this.debugWindow.visible = !this.debugWindow.visible;
-        });
 
+        this.currentScreen = 'startup';
+        this.inputManager.setCurrentScreen('startup');
+        
         Object.entries(this.screens).forEach(([name, screen]) => {
             if (screen && screen.handleInput) {
                 this.inputManager.registerScreen(name, (key) => {
+                    if (this.isPaused) return;
                     const nextScreen = screen.handleInput(key);
-                    if (nextScreen) {
-                        this.switchScreen(nextScreen);
-                    }
+                    if (nextScreen) this.switchScreen(nextScreen);
                     return nextScreen;
                 });
             }
         });
 
-        this.inputManager.setCurrentScreen('intro');
+        // === ИНИЦИАЛИЗАЦИЯ ПЛЕЕРА (1 РАЗ) ===
         this.musicPlayer = new MusicPlayer();
-        this.offCanvasCache = document.createElement('canvas');
+        
         this.debugWindow = new DebugWindow();
         this.gameReadySent = false;
         this.isPaused = false;
+        this.lastTime = 0;
+
+        const resizeHandler = () => this.resize();
+        window.addEventListener('resize', resizeHandler);
+        resizeHandler();
+
+        const handlePause = () => this.onPause();
+        const handleResume = () => this.onResume();
+        
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) handlePause();
+            else handleResume();
+        });
+        
+        window.addEventListener('blur', handlePause);
+        window.addEventListener('focus', handleResume);
 
         this.startGameLoop();
-
-        // --- PAUSE LOGIC ---
-        const handleVisibilityChange = () => {
-            if (document.hidden) {
-                this.onPause();
-            } else {
-                this.onResume();
-            }
-        };
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        window.addEventListener('blur', () => this.onPause());
-        window.addEventListener('focus', () => this.onResume());
-    }
-
-    onPause() {
-        if (this.isPaused) return; // Уже на паузе
-        console.log('Game Paused');
-        this.isPaused = true;
-        
-        // 1. Глушим глобальный аудио контекст (SFX)
-        if (this.audioManager && this.audioManager.context) {
-            this.audioManager.context.suspend();
-        }
-
-        // 2. Сообщаем текущему экрану о паузе (для Intro музыки)
-        if (this.screens[this.currentScreen] && this.screens[this.currentScreen].onPause) {
-            this.screens[this.currentScreen].onPause();
-        }
-    }
-
-    onResume() {
-        if (!this.isPaused) return; // Уже работает
-        console.log('Game Resumed');
-        this.isPaused = false;
-        
-        // 1. Восстанавливаем контекст
-        if (this.audioManager && this.audioManager.context) {
-            this.audioManager.context.resume();
-        }
-
-        // 2. Сообщаем экрану
-        if (this.screens[this.currentScreen] && this.screens[this.currentScreen].onResume) {
-            this.screens[this.currentScreen].onResume();
-        }
     }
 
     resize() {
-        const minDimension = Math.min(window.innerWidth, window.innerHeight) - 40;
-        const scale = minDimension / 1024;
+        this.canvasManager.resize();
         if (this.crtEffect) {
-            this.crtEffect.setScale(scale);
+            this.crtEffect.syncStyle(this.canvas);
         }
     }
 
-    gameOver() {
-        if (window.showAd) window.showAd();
+    onPause() {
+        if (this.isPaused) return;
+        this.isPaused = true;
+        
+        if (this.audioManager) this.audioManager.mute();
+        if (this.musicPlayer) this.musicPlayer.stop(); // Ставим музыку на паузу
+        
+        if (this.screens[this.currentScreen]?.onPause) this.screens[this.currentScreen].onPause();
+    }
+
+    onResume() {
+        if (!this.isPaused) return;
+        this.isPaused = false;
+        
+        if (this.audioManager) this.audioManager.unmute();
+        if (this.musicPlayer) this.musicPlayer.resume(); // Возобновляем музыку
+
+        if (this.screens[this.currentScreen]?.onResume) this.screens[this.currentScreen].onResume();
+        this.lastTime = performance.now();
+    }
+
+    switchScreen(screenName) {
+        if (this.screens[this.currentScreen]?.cleanup) {
+            this.screens[this.currentScreen].cleanup();
+        }
+
+        // === УПРАВЛЕНИЕ МУЗЫКОЙ (БЕЗ ПЕРЕСОЗДАНИЯ) ===
+        if (screenName === 'intro') {
+            this.musicPlayer.playMenuMusic();
+        }
+
+        if (screenName === 'game') {
+            // Будим контекст (на всякий случай)
+            if (this.audioManager && !this.isPaused) {
+                this.audioManager.resumeContext().catch(e => {});
+            }
+
+            this.screens.game = new GameScreen(this.ctx, {
+                virtualWidth: this.virtualWidth,
+                virtualHeight: this.virtualHeight,
+                bgScroller: this.bgScroller,
+                gameState: this.gameState,
+                audioManager: this.audioManager,
+                onGameOver: () => this.handleGameOver() 
+            });
+            
+            this.inputManager.registerScreen('game', (key) => {
+                if (this.isPaused) return;
+                return this.screens.game.handleInput(key);
+            });
+
+            this.musicPlayer.playGameMusic();
+        }
+
+        this.currentScreen = screenName;
+        this.inputManager.setCurrentScreen(screenName);
+    }
+
+    handleGameOver() {
+        try {
+            if (window.showAd) window.showAd();
+        } catch (e) {
+            console.error("Ad error:", e);
+        }
 
         this.screens.intro = new IntroScreen(this.ctx, {
             virtualWidth: this.virtualWidth,
@@ -185,54 +194,31 @@ class Game {
             finalScore: this.gameState.score,
             highScore: this.gameState.highScore
         });
-        
+
         this.switchScreen('intro');
     }
 
-    switchScreen(screenName) {
-        if (this.screens[this.currentScreen]?.cleanup) {
-            this.screens[this.currentScreen].cleanup();
-        }
-
-        if (screenName === 'intro') {
-            if (this.musicPlayer) {
-                this.musicPlayer.stop();
-            }
-        }
-
-        if (screenName === 'game') {
-            this.screens.game = new GameScreen(this.ctx, {
-                virtualWidth: this.virtualWidth,
-                virtualHeight: this.virtualHeight,
-                bgScroller: this.bgScroller,
-                gameState: this.gameState,
-                audioManager: this.audioManager
-            });
-
-            if (this.musicPlayer) {
-                this.musicPlayer.playTrack(0);
-            }
-        }
-
-        this.currentScreen = screenName;
-        this.inputManager.setCurrentScreen(screenName);
-    }
-
     update(timestamp) {
+        if (this.isPaused) return;
         const delta = (timestamp - (this.lastTime || timestamp)) / 1000;
         this.lastTime = timestamp;
-        
-        this.gameState.update(delta);
-        this.screens[this.currentScreen]?.update(delta);
-        
-        if(this.debugWindow.visible) {
-            this.debugWindow.update(delta);
+        const safeDelta = Math.min(delta, 0.1); 
+
+        this.gameState.update(safeDelta);
+        if (this.screens[this.currentScreen]) {
+            this.screens[this.currentScreen].update(safeDelta);
         }
+        
+        if(this.debugWindow.visible) this.debugWindow.update(safeDelta);
     }
 
     draw() {
+        if (this.isPaused) return;
+
         this.canvasManager.clearScreen();
-        this.screens[this.currentScreen]?.draw();
+        if (this.screens[this.currentScreen]) {
+            this.screens[this.currentScreen].draw();
+        }
         
         if (this.currentScreen === 'game') {
             this.hudManager.draw(
@@ -242,33 +228,30 @@ class Game {
             );
         }
         
-        if(this.debugWindow.visible) {
-            this.debugWindow.draw(this.ctx);
-        }
+        if(this.debugWindow.visible) this.debugWindow.draw(this.ctx);
 
-        this.crtEffect.render(performance.now());
+        if (this.crtEffect) this.crtEffect.render(performance.now());
 
         if (!this.gameReadySent) {
             if (window.ysdk && window.ysdk.features && window.ysdk.features.LoadingAPI) {
                 window.ysdk.features.LoadingAPI.ready();
-                console.log('Yandex Game Ready sent (First Frame)');
+                this.gameReadySent = true;
             }
-            this.gameReadySent = true;
         }
     }
 
     startGameLoop() {
         const loop = (timestamp) => {
-            if (!this.isPaused) {
-                this.update(timestamp);
-                this.draw();
-            }
+            this.update(timestamp);
+            this.draw();
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);
     }
 }
 
-window.onload = () => {
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => new Game());
+} else {
     new Game();
-};
+}

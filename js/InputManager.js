@@ -4,7 +4,21 @@ class InputManager {
         this.currentScreen = null;
         this.debugHandler = null;
         
-        window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+        // Клавиатура
+        window.addEventListener('keydown', (e) => this.handleInput(e.key));
+
+        // Тач и Клик (превращаем в 'Enter' для меню)
+        const touchHandler = (e) => {
+            // Не блокируем стандартные тачи в игре (Player.js сам их ловит),
+            // но для меню нам нужно событие
+            if (this.currentScreen !== 'game') { 
+                // В меню любой тач = Enter
+                this.handleInput('Enter');
+            }
+        };
+
+        window.addEventListener('touchstart', touchHandler, { passive: true });
+        window.addEventListener('mousedown', touchHandler);
     }
 
     setCurrentScreen(screenName) {
@@ -19,19 +33,24 @@ class InputManager {
         this.debugHandler = callback;
     }
 
-    handleKeyDown(e) {
-        // Handle debug toggle
-        if (e.key === 'd' || e.key === 'D') {
+    handleInput(key) {
+        // Debug toggle (только с клавиатуры 'd')
+        if (key === 'd' || key === 'D') {
             if (this.debugHandler) {
                 this.debugHandler();
             }
             return;
         }
 
-        // Handle screen-specific input
+        // Роутинг инпута в активный экран
         if (this.currentScreen && this.handlers.has(this.currentScreen)) {
             const handler = this.handlers.get(this.currentScreen);
-            const nextScreen = handler(e.key);
+            
+            // Нормализуем ввод: пробел и клик считаем подтверждением
+            let normalizedKey = key;
+            if (key === ' ' || key === 'Spacebar') normalizedKey = 'Enter';
+
+            const nextScreen = handler(normalizedKey);
             if (nextScreen) {
                 return nextScreen;
             }

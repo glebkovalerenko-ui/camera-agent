@@ -3,62 +3,64 @@ class CanvasManager {
         this.canvas = canvas;
         if (!this.canvas) throw new Error('Canvas element required');
 
-        // Force exact 1024x1024 dimensions
-        this.canvas.width = 1024;
-        this.canvas.height = 1024;
-        
-        // Set up context with fixed dimensions
-        this.ctx = this.canvas.getContext('2d');
-        this.ctx.imageSmoothingEnabled = false;
-
-        // Store virtual dimensions
+        // ЖЕСТКАЯ ФИКСАЦИЯ БУФЕРА
+        // Мы никогда не меняем эти значения в процессе игры
         this.virtualWidth = 1024;
         this.virtualHeight = 1024;
-    }
-
-    clearScreen() {
-        this.ctx.fillStyle = '#000000';
-        this.ctx.fillRect(0, 0, 1024, 1024);
-    }
-
-    setupCanvas() {
-        const displayWidth = window.innerWidth;
-        const displayHeight = window.innerHeight;
-        this.scale = Math.min(displayWidth / this.virtualWidth, displayHeight / this.virtualHeight);
-        this.canvas.width = displayWidth;
-        this.canvas.height = displayHeight;
-        this.offsetX = (displayWidth - (this.virtualWidth * this.scale)) / 2;
-        this.offsetY = (displayHeight - (this.virtualHeight * this.scale)) / 2;
-        this.applyTransform();
-    }
-    
-    applyTransform() {
-        this.ctx.setTransform(this.scale, 0, 0, this.scale, this.offsetX, this.offsetY);
-    }
-    
-    bindEvents() {
-        let resizeTimeout;
-        window.addEventListener('resize', () => {
-            clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(() => {
-                this.setupCanvas();
-            }, 100);
-        });
-    }
-
-    resize(scale, left, top) {
-        // Maintain fixed dimensions
+        
         this.canvas.width = this.virtualWidth;
         this.canvas.height = this.virtualHeight;
         
-        // Apply exact transforms
-        this.canvas.style.width = `${this.virtualWidth}px`;
-        this.canvas.style.height = `${this.virtualHeight}px`;
-        this.canvas.style.position = 'absolute';
-        this.canvas.style.transformOrigin = '0 0';
-        this.canvas.style.transform = `scale(${scale})`;
+        this.ctx = this.canvas.getContext('2d');
+        // Отключаем сглаживание для пиксель-арта
+        this.ctx.imageSmoothingEnabled = false;
+    }
+
+    clearScreen() {
+        // Очищаем буфер перед кадром
+        this.ctx.clearRect(0, 0, this.virtualWidth, this.virtualHeight);
+        // Заливаем черным (важно для CRT, чтобы не было прозрачных дыр)
+        this.ctx.fillStyle = '#000000';
+        this.ctx.fillRect(0, 0, this.virtualWidth, this.virtualHeight);
+    }
+
+    setupCanvas() {
+        this.resize();
+    }
+    
+    // Метод теперь управляет ТОЛЬКО стилями CSS
+    resize() {
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+        
+        // Считаем масштаб с сохранением пропорций (Letterboxing)
+        const targetAspect = this.virtualWidth / this.virtualHeight;
+        const windowAspect = windowWidth / windowHeight;
+        
+        let finalWidth, finalHeight;
+        
+        if (windowAspect < targetAspect) {
+            // Упираемся в ширину
+            finalWidth = windowWidth;
+            finalHeight = windowWidth / targetAspect;
+        } else {
+            // Упираемся в высоту
+            finalHeight = windowHeight;
+            finalWidth = finalHeight * targetAspect;
+        }
+
+        // Центрирование
+        const left = (windowWidth - finalWidth) / 2;
+        const top = (windowHeight - finalHeight) / 2;
+
+        // Применяем стили
+        this.canvas.style.width = `${finalWidth}px`;
+        this.canvas.style.height = `${finalHeight}px`;
         this.canvas.style.left = `${left}px`;
         this.canvas.style.top = `${top}px`;
+        this.canvas.style.position = 'absolute';
+        
+        return { width: finalWidth, height: finalHeight, left, top };
     }
 
     getContext() {

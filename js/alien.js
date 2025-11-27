@@ -1,50 +1,56 @@
+// === КЭШИРОВАНИЕ: Создаем картинку один раз на всю игру ===
+const alienImage = new Image();
+alienImage.src = './sprites/alien1.png';
+// ==========================================================
+
 class Alien {
     constructor(ctx, options = {}) {
         this.ctx = ctx;
         this.width = options.width || 100;
         this.height = options.height || 100;
-        this.virtualWidth = options.virtualWidth || 1920;
-        this.virtualHeight = options.virtualHeight || 1080;
+        this.virtualWidth = options.virtualWidth || 1024;
+        this.virtualHeight = options.virtualHeight || 1024;
         
-        // Position will be set by the formation manager
-        this.x = options.x || 0;
-        this.y = options.y || 0;
+        // Рождаемся за экраном, чтобы не мелькать при инициализации
+        this.x = options.x || -1000;
+        this.y = options.y || -1000;
         
-        // Movement properties
         this.speed = options.speed || 100;
-        this.direction = 1; // 1 for right, -1 for left
+        this.direction = 1; 
         
-        // Update sprite path to match processed file
-        this.img = new Image();
-        this.img.src = './sprites/alien1.png';  // Updated path
+        this.isDiving = false;
+        this.diveVelocityY = 0;
+        this.diveVelocityX = 0;
+        
+        // ВАЖНО: Используем уже загруженную общую картинку
+        // Вместо создания новой через new Image()
+        this.img = alienImage;
     }
 
     update(delta) {
-        // Basic horizontal movement
-        this.x += this.speed * this.direction * delta;
+        if (!this.isDiving) {
+            this.x += this.speed * this.direction * delta;
+        }
     }
 
     draw() {
-        const ctx = this.ctx;
-        if (this.img.complete) {
+        // Рисуем только если картинка реально загрузилась
+        if (this.img.complete && this.img.naturalWidth > 0) {
+            const ctx = this.ctx;
             ctx.save();
             
-            // --- FIX FOR IOS GHOSTING ---
-            // Вместо рисования второй картинки с фильтром, используем нативную тень
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.6)'; // Цвет тени
-            ctx.shadowBlur = 10;                    // Размытие
-            ctx.shadowOffsetX = 15;                 // Смещение по X
-            ctx.shadowOffsetY = 30;                 // Смещение по Y (тень внизу)
+            // Тень
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+            ctx.shadowBlur = 10;
+            ctx.shadowOffsetX = 15;
+            ctx.shadowOffsetY = 30;
             
-            // Рисуем унитаз один раз, тень появится сама
             ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
             
             ctx.restore();
-        } else {
-            // Заглушка, если картинка не прогрузилась
-            ctx.fillStyle = '#00ff00';
-            ctx.fillRect(this.x, this.y, this.width, this.height);
-        }
+        } 
+        // Блок else с зеленым квадратом УДАЛЕН.
+        // Если картинка не готова - лучше ничего не рисовать 1 кадр, чем пугать игрока глитчем.
     }
 
     reverseDirection() {

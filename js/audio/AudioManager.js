@@ -9,54 +9,101 @@ class AudioManager {
     }
 
     constructor() {
-        if (AudioManager.instance) {
-            return AudioManager.instance;
-        }
+        if (AudioManager.instance) return AudioManager.instance;
         AudioManager.instance = this;
 
-        this.context = new (window.AudioContext || window.webkitAudioContext)();
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        this.context = new AudioContext();
+        
         this.masterGain = this.context.createGain();
         this.musicGain = this.context.createGain();
         this.fxGain = this.context.createGain();
         
-        // Connect gains to master
         this.musicGain.connect(this.masterGain);
         this.fxGain.connect(this.masterGain);
-        
-        // Connect master to speakers by default
         this.masterGain.connect(this.context.destination);
         
         this.sounds = new Map();
         this.music = new Map();
 
-        // Set default volumes
-        this.masterGain.gain.value = 1.0;
-        this.musicGain.gain.value = 0.8;  // Lower music volume
-        this.fxGain.gain.value = 0.7;     // Slightly lower FX volume
+        this.masterVolume = 1.0;
+        this.masterGain.gain.value = this.masterVolume;
+        this.musicGain.gain.value = 0.8;
+        this.fxGain.gain.value = 0.7;
 
-        // Add initialization state
         this.isInitialized = false;
+        this.isMuted = false;
+        this.hasSilentOscillator = false;
     }
+
+    // Запускаем "тишину", чтобы браузер не блокировал контекст
+    startSilentOscillator() {
+        if (this.hasSilentOscillator) return;
+        try {
+            const oscillator = this.context.createOscillator();
+            const gain = this.context.createGain();
+            gain.gain.value = 0.001; // Минимальный сигнал
+            oscillator.connect(gain);
+            gain.connect(this.context.destination);
+            oscillator.start();
+            this.hasSilentOscillator = true;
+        } catch (e) {}
+    }
+
+    // Вызывается один раз при старте игры по клику
+    async resumeContext() {
+        if (this.context.state === 'suspended' || this.context.state === 'interrupted') {
+            try {
+                await this.context.resume();
+            } catch (e) {
+                console.warn('Context resume failed', e);
+            }
+        }
+        if (this.context.state === 'running') {
+            this.startSilentOscillator();
+        }
+    }
+
+    // === ИСПРАВЛЕНИЕ: Только громкость, никакого suspend ===
+    mute() {
+        if (this.isMuted) return;
+        // Мгновенно убираем громкость в 0
+        this.masterGain.gain.setValueAtTime(0, this.context.currentTime);
+        this.isMuted = true;
+        // УБРАНО: this.context.suspend(); 
+        // Мы держим контекст "горячим"
+    }
+
+    unmute() {
+        if (!this.isMuted) return;
+        // УБРАНО: this.context.resume();
+        
+        // Восстанавливаем громкость
+        this.masterGain.gain.setValueAtTime(this.masterVolume, this.context.currentTime);
+        this.isMuted = false;
+        
+        // На всякий случай проверяем статус
+        if (this.context.state !== 'running') {
+            this.context.resume().catch(() => {});
+        }
+    }
+    // =======================================================
 
     createAudioNodes(source, config = {}) {
         const gainNode = this.context.createGain();
         const panNode = this.context.createStereoPanner();
         
-        // Configure nodes with provided values or defaults
         gainNode.gain.value = config.volume ?? 1;
         panNode.pan.value = config.pan ?? 0;
 
-        // Connect nodes
         source.connect(panNode);
         panNode.connect(gainNode);
         gainNode.connect(this.fxGain);
 
-        // Apply pitch if specified
         if (config.pitch !== undefined) {
             source.playbackRate.value = config.pitch;
         }
 
-        // Apply decay if specified
         if (config.decay > 0) {
             const startTime = this.context.currentTime;
             gainNode.gain.setValueAtTime(config.volume ?? 1, startTime);
@@ -67,112 +114,62 @@ class AudioManager {
     }
 
     async loadSound(key, url) {
-        const response = await fetch(url);
-        const arrayBuffer = await response.arrayBuffer();
-        const audioBuffer = await this.context.decodeAudioData(arrayBuffer);
-        this.sounds.set(key, audioBuffer);
+        try {
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await this.context.decodeAudioData(arrayBuffer);
+            this.sounds.set(key, audioBuffer);
+        } catch (e) {
+            console.warn(`SFX Error: ${key}`, e);
+        }
     }
 
     async loadMusic(key, url) {
-        const response = await fetch(url);
-        const arrayBuffer = await response.arrayBuffer();
-        const audioBuffer = await this.context.decodeAudioData(arrayBuffer);
-        this.music.set(key, audioBuffer);
+        try {
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await this.context.decodeAudioData(arrayBuffer);
+            this.music.set(key, audioBuffer);
+        } catch (e) {
+            console.warn(`Music Error: ${key}`, e);
+        }
     }
 
-    async preloadGameSounds(musicTracks = []) {
-        try {
-            console.log('Loading game sounds...');
-            
-            // Load standard game sounds
-            const standardSounds = [
-                this.loadSound('explosion', './audio/explosion.mp3'),
-                this.loadSound('laser', './audio/player-shoot.mp3'),
-                this.loadSound('alien-laser', './audio/alien-shoot.mp3')
-            ];
+    async preloadGameSounds() {
+        const sfxPromises = [
+            this.loadSound('explosion', './audio/explosion.mp3'),
+            this.loadSound('laser', './audio/player-shoot.mp3'),
+            this.loadSound('alien-laser', './audio/alien-shoot.mp3')
+        ];
+        
+        const musicPromises = [
+            this.loadMusic('menu_theme', './audio/xeno-war.mp3'),
+            this.loadMusic('game_track_0', './audio/music/game1.mp3'),
+            this.loadMusic('game_track_1', './audio/music/game2.mp3')
+        ];
 
-            // Load music tracks
-            const musicLoading = musicTracks.map((track, index) => {
-                return this.loadMusic(`track${index}`, track)
-                    .then(() => console.log(`Loaded music track: ${track.split('/').pop()}`));
-            });
+        await Promise.all([...sfxPromises, ...musicPromises]);
+        this.isInitialized = true;
+    }
 
-            await Promise.all([...standardSounds, ...musicLoading]);
-            
-            this.isInitialized = true;
-            console.log('All sounds loaded successfully');
-            this.checkAudioState();
-            
-        } catch (error) {
-            console.error('Failed to load sounds:', error);
-            throw error;
-        }
+    getMusicBuffer(key) {
+        return this.music.get(key);
     }
 
     playSound(key, config = {}) {
-        if (!this.isInitialized) {
-            console.warn('Attempted to play sound before initialization:', key);
-            return null;
-        }
-
+        if (this.isMuted) return null;
         const buffer = this.sounds.get(key);
-        if (!buffer) {
-            console.warn(`Sound not found: ${key}`);
-            return null;
-        }
+        if (!buffer) return null;
 
         try {
             const source = this.context.createBufferSource();
             source.buffer = buffer;
-
-            // Create and connect audio processing nodes
             const nodes = this.createAudioNodes(source, config);
-            
             source.start(0);
-            console.log(`Playing sound: ${key} with config:`, config);
-            
             return { source, ...nodes };
-        } catch (error) {
-            console.error(`Error playing sound ${key}:`, error);
+        } catch (e) {
             return null;
         }
-    }
-
-    playMusic(key, loop = true) {
-        const buffer = this.music.get(key);
-        if (buffer) {
-            const source = this.context.createBufferSource();
-            source.buffer = buffer;
-            source.loop = loop;
-            source.connect(this.musicGain);
-            source.start(0);
-            return source;
-        }
-    }
-
-    connectToDestination(destination) {
-        // Disconnect from speakers
-        this.masterGain.disconnect();
-        // Connect to new destination
-        this.masterGain.connect(destination);
-    }
-
-    reconnectToSpeakers() {
-        // Reconnect to speakers
-        this.masterGain.disconnect();
-        this.masterGain.connect(this.context.destination);
-    }
-
-    // Add debug method
-    checkAudioState() {
-        console.log({
-            contextState: this.context.state,
-            masterVolume: this.masterGain.gain.value,
-            fxVolume: this.fxGain.gain.value,
-            musicVolume: this.musicGain.gain.value,
-            loadedSounds: Array.from(this.sounds.keys()),
-            loadedMusic: Array.from(this.music.keys())
-        });
     }
 }
 

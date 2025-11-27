@@ -1,4 +1,4 @@
-import { Strings } from '../utils/Localization.js';
+import { Strings, lang } from '../utils/Localization.js';
 
 class IntroScreen {
     constructor(ctx, options = {}) {
@@ -8,104 +8,40 @@ class IntroScreen {
         this.bgScroller = options.bgScroller;
         
         this.logo = new Image();
-        this.logo.src = './sprites/xenowar.png';
+        if (lang === 'ru') {
+            this.logo.src = './sprites/logo_ru.png';
+        } else {
+            this.logo.src = './sprites/logo_en.png';
+        }
         
         this.alpha = 0;
         this.fadeIn = true;
-        this.fadeSpeed = 0.5;
+        this.fadeSpeed = 2.0;
         
         this.pressSpaceAlpha = 0;
         this.pressSpaceVisible = false;
 
         this.isGameOver = options.isGameOver || false;
-        this.finalScore = options.finalScore;
-        this.highScore = options.highScore;
-
-        // Audio setup
-        this.titleMusic = new Audio('/audio/xeno-war.mp3'); 
-        this.titleMusic.loop = true;
-        this.titleMusic.volume = 1.0;
-        this.musicStarted = false;
-
-        // --- AUDIO UNLOCKER ---
-        const startAudio = () => {
-            console.log('Interaction: Attempting to unlock audio...');
-
-            // 1. Unlock AudioContext
-            if (window.game && window.game.audioManager && window.game.audioManager.context) {
-                if (window.game.audioManager.context.state === 'suspended') {
-                    window.game.audioManager.context.resume();
-                }
-            }
-
-            // 2. Start Menu Music
-            if (!this.musicStarted && !window.game.isPaused) {
-                this.titleMusic.play()
-                    .then(() => {
-                        this.musicStarted = true;
-                        console.log('Menu music started');
-                        // Remove unlock listeners
-                        window.removeEventListener('click', startAudio);
-                        window.removeEventListener('keydown', startAudio);
-                        window.removeEventListener('touchstart', startAudio);
-                    })
-                    .catch(e => console.log('Audio play blocked:', e));
-            }
-        };
-
-        // Listeners for first interaction
-        window.addEventListener('click', startAudio);
-        window.addEventListener('keydown', startAudio);
-        window.addEventListener('touchstart', startAudio);
-
-        // --- TAP TO START HANDLER ---
-        // Используем стрелочную функцию, чтобы this не терялся
-        this.tapHandler = (e) => {
-            // Если текст "Нажми пробел" виден — стартуем
-            if (this.pressSpaceVisible) {
-                // Предотвращаем возможные двойные срабатывания
-                if (e.type === 'touchstart') e.preventDefault(); 
-                
-                console.log('Tap to start triggered');
-                window.game.switchScreen('game');
-                window.game.gameState.reset();
-                this.cleanup();
-            }
-        };
-
-        // Вешаем на окно, чтобы ловить везде. Используем passive: false для надежности
-        window.addEventListener('touchstart', this.tapHandler, { passive: false });
-        window.addEventListener('click', this.tapHandler);
+        this.finalScore = options.finalScore || 0;
+        this.highScore = options.highScore || 0;
+        this.inputBlockTimer = 1.0;
     }
 
-    // Новые методы для обработки паузы
-    onPause() {
-        if (this.titleMusic && this.musicStarted) {
-            this.titleMusic.pause();
-        }
-    }
-
-    onResume() {
-        if (this.titleMusic && this.musicStarted) {
-            this.titleMusic.play().catch(e => console.log('Resume failed', e));
-        }
-    }
+    // Пустые методы, так как музыка теперь в MusicPlayer
+    startMusic() {} 
+    onPause() {}
+    onResume() {}
+    cleanup() {}
 
     update(delta) {
         this.bgScroller.update(delta);
-        
+        if (this.inputBlockTimer > 0) this.inputBlockTimer -= delta;
+
         if (this.fadeIn) {
             this.alpha = Math.min(1, this.alpha + delta * this.fadeSpeed);
             if (this.alpha >= 1) {
                 this.fadeIn = false;
                 this.pressSpaceVisible = true;
-                
-                // Try to play if not started yet (and not paused)
-                if (!this.musicStarted && !window.game.isPaused) {
-                    this.titleMusic.play()
-                        .then(() => this.musicStarted = true)
-                        .catch(e => {});
-                }
             }
         }
         
@@ -117,61 +53,68 @@ class IntroScreen {
     draw() {
         this.bgScroller.draw();
         
-        if (this.logo.complete) {
-            this.ctx.save();
-            this.ctx.globalAlpha = this.alpha;
-            const scale = 0.8;
-            const logoWidth = this.logo.width * scale;
-            const logoHeight = this.logo.height * scale;
-            const x = (this.virtualWidth - logoWidth) / 2;
-            const y = (this.virtualHeight - logoHeight) / 2;
-            this.ctx.drawImage(this.logo, x, y, logoWidth, logoHeight);
-            this.ctx.restore();
-        }
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillRect(0, 0, this.virtualWidth, this.virtualHeight);
 
-        if (this.isGameOver && this.pressSpaceVisible) {
+        if (this.isGameOver) {
             this.ctx.save();
             this.ctx.globalAlpha = this.alpha;
-            this.ctx.fillStyle = '#ffffff';
-            this.ctx.font = '24px "Press Start 2P"';
+            
+            this.ctx.fillStyle = '#ff0000';
+            this.ctx.font = '64px "Press Start 2P"';
             this.ctx.textAlign = 'center';
-            this.ctx.fillText(`${Strings.finalScore}: ${this.finalScore}`, this.virtualWidth / 2, this.virtualHeight * 0.15);
-            this.ctx.fillText(`${Strings.highScore}: ${this.highScore}`, this.virtualWidth / 2, this.virtualHeight * 0.2);
-
-            this.ctx.fillStyle = '#8B4513';
-            this.ctx.font = '48px "Press Start 2P"';
+            this.ctx.shadowColor = '#ff0000';
+            this.ctx.shadowBlur = 20;
             this.ctx.fillText(Strings.gameOver, this.virtualWidth / 2, this.virtualHeight * 0.3);
+
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = '32px "Press Start 2P"';
+            this.ctx.shadowBlur = 0;
+            this.ctx.fillText(`${Strings.finalScore}: ${this.finalScore}`, this.virtualWidth / 2, this.virtualHeight * 0.5);
+            
+            this.ctx.fillStyle = '#ffff00';
+            this.ctx.fillText(`${Strings.highScore}: ${this.highScore}`, this.virtualWidth / 2, this.virtualHeight * 0.6);
+            
             this.ctx.restore();
+        } else {
+            if (this.logo.complete && this.logo.naturalWidth > 0) {
+                this.ctx.save();
+                this.ctx.globalAlpha = this.alpha;
+                
+                const maxWidth = this.virtualWidth * 0.8; 
+                let scale = 1.0;
+                if (this.logo.width > maxWidth) {
+                    scale = maxWidth / this.logo.width;
+                }
+                
+                const logoWidth = this.logo.width * scale;
+                const logoHeight = this.logo.height * scale;
+                const x = (this.virtualWidth - logoWidth) / 2;
+                const y = (this.virtualHeight - logoHeight) / 2;
+                
+                this.ctx.drawImage(this.logo, x, y, logoWidth, logoHeight);
+                this.ctx.restore();
+            }
         }
         
-        if (this.pressSpaceVisible) {
+        if (this.pressSpaceVisible && this.inputBlockTimer <= 0) {
             this.ctx.save();
             this.ctx.globalAlpha = this.pressSpaceAlpha;
-            this.ctx.fillStyle = '#b026ff';
+            this.ctx.fillStyle = '#00ff00';
             this.ctx.font = '24px "Press Start 2P"';
             this.ctx.textAlign = 'center';
-            this.ctx.fillText(Strings.pressStart, this.virtualWidth / 2, this.virtualHeight * 0.7);
+            this.ctx.fillText(Strings.pressStart, this.virtualWidth / 2, this.virtualHeight * 0.85);
             this.ctx.restore();
         }
     }
 
     handleInput(key) {
+        if (this.inputBlockTimer > 0) return null;
         if ((key === ' ' || key === 'Enter') && this.pressSpaceVisible) {
             window.game.gameState.reset();
-            this.cleanup();
             return 'game';
         }
         return null;
-    }
-
-    cleanup() {
-        if (this.titleMusic) {
-            this.titleMusic.pause();
-            this.titleMusic.currentTime = 0;
-        }
-        // Удаляем слушатели
-        window.removeEventListener('touchstart', this.tapHandler);
-        window.removeEventListener('click', this.tapHandler);
     }
 }
 

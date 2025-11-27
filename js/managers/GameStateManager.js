@@ -1,12 +1,7 @@
 class GameStateManager {
     constructor() {
-        this.score = 0;
-        this.lives = 3;
+        this.reset();
         this.highScore = parseInt(localStorage.getItem('highScore') || '0', 10);
-        this.playerHit = false;
-        this.playerInvulnerable = false;
-        this.invulnerabilityTime = 2.0;
-        this.invulnerabilityTimer = 0;
     }
 
     addPoints(points) {
@@ -18,10 +13,17 @@ class GameStateManager {
     }
 
     handlePlayerHit() {
+        // Если уже мертв, не отнимаем дальше (защита от -1, -2)
+        if (this.lives <= 0) return true;
+
         if (!this.playerInvulnerable) {
             this.lives--;
             this.playerHit = true;
             this.playerInvulnerable = true;
+            
+            // Жесткое ограничение, чтобы в HUD не было "-1"
+            if (this.lives < 0) this.lives = 0;
+
             return this.lives <= 0;
         }
         return false;
@@ -30,9 +32,10 @@ class GameStateManager {
     update(delta) {
         if (this.playerInvulnerable) {
             this.invulnerabilityTimer += delta;
-            if (this.invulnerabilityTimer >= this.invulnerabilityTime) {
+            if (this.invulnerabilityTimer >= 2.0) {
                 this.playerInvulnerable = false;
                 this.invulnerabilityTimer = 0;
+                this.playerHit = false;
             }
         }
     }
@@ -43,13 +46,6 @@ class GameStateManager {
         this.playerHit = false;
         this.playerInvulnerable = false;
         this.invulnerabilityTimer = 0;
-        // Don't reset highScore as it should persist
-    }
-
-    getInvulnerabilityAlpha() {
-        return this.playerInvulnerable ? 
-            0.5 + Math.sin(this.invulnerabilityTimer * 10) * 0.3 : 
-            1;
     }
 }
 

@@ -2,30 +2,32 @@
 
 const dictionary = {
     en: {
-        gameTitle: "Skibidi Invasion",
-        pressStart: "PRESS SPACE TO START",
-        gameOver: "TOILET VICTORY",
-        finalScore: "FINAL SCORE",
-        highScore: "HIGH SCORE", // Для экрана смерти
+        gameTitle: "Camera Agent: Toilet War",
+        pressStart: "TAP TO START MISSION",
+        gameOver: "MISSION FAILED",
+        finalScore: "ENEMIES FLUSHED",
+        highScore: "TOP AGENT",
         scoreHUD: "SCORE",
-        livesHUD: "LIVES",
-        highScoreHUD: "BEST",    // Для HUD (покороче)
-        loading: "CONNECTING TO TV WORLD..."
+        livesHUD: "CAMERAS",
+        highScoreHUD: "BEST",
+        loading: "CONNECTING TO HQ...",
+        bootSystem: "SYSTEM BOOT: CAMERA_OS",
+        bootPrompt: "TAP TO CONNECT"
     },
     ru: {
-        gameTitle: "Вторжение Скибиди",
-        pressStart: "НАЖМИ ПРОБЕЛ",
-        gameOver: "ПОБЕДА УНИТАЗОВ",
-        finalScore: "ИТОГ",
-        highScore: "РЕКОРД",
+        gameTitle: "Агент Камера: Битва Туалетов",
+        pressStart: "НАЖМИ ЧТОБЫ НАЧАТЬ",
+        gameOver: "МИССИЯ ПРОВАЛЕНА",
+        finalScore: "СМЫТО ВРАГОВ",
+        highScore: "ЛУЧШИЙ АГЕНТ",
         scoreHUD: "СЧЕТ",
-        livesHUD: "ЖИЗНИ",
+        livesHUD: "КАМЕРЫ",
         highScoreHUD: "РЕКОРД",
-        loading: "ПОДКЛЮЧЕНИЕ К ТВ МИРУ..."
+        loading: "СВЯЗЬ СО ШТАБОМ...",
+        bootSystem: "ЗАГРУЗКА: СИСТЕМА КАМЕР",
+        bootPrompt: "НАЖМИ ДЛЯ ПОДКЛЮЧЕНИЯ"
     }
 };
 
-// Определяем язык браузера (если начинается на 'ru', то русский, иначе английский)
-const lang = (navigator.language || navigator.userLanguage || 'en').toLowerCase().startsWith('ru') ? 'ru' : 'en';
-
+export const lang = (navigator.language || navigator.userLanguage || 'en').toLowerCase().startsWith('ru') ? 'ru' : 'en';
 export const Strings = dictionary[lang];

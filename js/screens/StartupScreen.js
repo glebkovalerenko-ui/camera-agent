@@ -1,3 +1,5 @@
+import { Strings } from '../utils/Localization.js';
+
 class StartupScreen {
     constructor(ctx, options = {}) {
         this.ctx = ctx;
@@ -6,18 +8,18 @@ class StartupScreen {
         this.alpha = 0;
         this.fadeIn = true;
         this.fadeSpeed = 0.8;
-        this.displayDuration = 2.0;
-        this.timer = 0;
         this.readyForInput = false;
         this.showPressEnter = false;
     }
+
+    onPause() {}
+    onResume() {}
 
     update(delta) {
         if (this.fadeIn) {
             this.alpha = Math.min(1, this.alpha + delta * this.fadeSpeed);
             if (this.alpha >= 1) {
                 this.fadeIn = false;
-                // Show prompt immediately after fade in
                 this.showPressEnter = true;
                 this.readyForInput = true;
             }
@@ -30,26 +32,25 @@ class StartupScreen {
         this.ctx.fillRect(0, 0, this.virtualWidth, this.virtualHeight);
         
         this.ctx.globalAlpha = this.alpha;
-        this.ctx.fillStyle = '#00ff00';
-        this.ctx.font = '32px "Press Start 2P"';  // Reduced from 48px
+        this.ctx.fillStyle = '#00ff00'; 
+        this.ctx.font = '32px "Press Start 2P"';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         
-        // Draw text with CRT-like glow effect
         this.ctx.shadowColor = '#00ff00';
         this.ctx.shadowBlur = 20;
         
-        // Main text
-        this.ctx.fillText('SWITCHING ON ARCADE...', 
+        // Заголовок (Система)
+        this.ctx.fillText(Strings.bootSystem, 
             this.virtualWidth / 2, 
             this.virtualHeight / 2);
 
-        // Draw "Press Enter" with blinking effect if ready
         if (this.showPressEnter) {
             this.ctx.font = '24px "Press Start 2P"';
-            this.ctx.fillStyle = '#00ff00';
             this.ctx.globalAlpha = 0.5 + Math.sin(Date.now() * 0.005) * 0.5;
-            this.ctx.fillText('PRESS ENTER TO CONTINUE', 
+            
+            // Призыв к действию (Нажми...)
+            this.ctx.fillText(Strings.bootPrompt, 
                 this.virtualWidth / 2, 
                 this.virtualHeight * 0.7);
         }
@@ -58,7 +59,7 @@ class StartupScreen {
     }
 
     handleInput(key) {
-        if (this.readyForInput && key === 'Enter') {
+        if (this.readyForInput && (key === 'Enter' || key === ' ')) {
             return 'intro';
         }
         return null;
