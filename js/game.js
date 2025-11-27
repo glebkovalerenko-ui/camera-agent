@@ -3,6 +3,7 @@ import { ParticleEngine, LaserEngine } from './particleEngine.js';
 import ImageBackgroundScroller from './imageBackgroundScroller.js';
 import PatternFormation from './PatternFormation.js';
 import IntroScreen from './screens/IntroScreen.js';
+import TutorialScreen from './screens/TutorialScreen.js';
 import MusicPlayer from './audio/MusicPlayer.js';
 import StartupScreen from './screens/StartupScreen.js';
 import DebugWindow from './DebugWindow.js';
@@ -71,26 +72,43 @@ class Game {
                 virtualHeight: this.virtualHeight,
                 bgScroller: this.bgScroller
             }),
+            tutorial: null,
             game: null 
         };
+
+        // Флаг для показа туториала только 1 раз
+        this.tutorialShown = false;
 
         this.currentScreen = 'startup';
         this.inputManager.setCurrentScreen('startup');
         
+        // Начальная регистрация экранов (startup, intro)
         Object.entries(this.screens).forEach(([name, screen]) => {
             if (screen && screen.handleInput) {
                 this.inputManager.registerScreen(name, (key) => {
                     if (this.isPaused) return;
+                    
                     const nextScreen = screen.handleInput(key);
+                    
+                    // === ЛОГИКА ПЕРЕХОДА С ИНТРО ===
+                    if (name === 'intro' && nextScreen === 'start') {
+                        if (!this.tutorialShown) {
+                            this.tutorialShown = true;
+                            this.switchScreen('tutorial');
+                        } else {
+                            this.switchScreen('game');
+                        }
+                        return;
+                    }
+                    // ===============================
+
                     if (nextScreen) this.switchScreen(nextScreen);
                     return nextScreen;
                 });
             }
         });
 
-        // === ИНИЦИАЛИЗАЦИЯ ПЛЕЕРА (1 РАЗ) ===
         this.musicPlayer = new MusicPlayer();
-        
         this.debugWindow = new DebugWindow();
         this.gameReadySent = false;
         this.isPaused = false;
@@ -124,19 +142,22 @@ class Game {
     onPause() {
         if (this.isPaused) return;
         this.isPaused = true;
-        
         if (this.audioManager) this.audioManager.mute();
-        if (this.musicPlayer) this.musicPlayer.stop(); // Ставим музыку на паузу
-        
+        if (this.musicPlayer) this.musicPlayer.stop();
         if (this.screens[this.currentScreen]?.onPause) this.screens[this.currentScreen].onPause();
     }
 
     onResume() {
         if (!this.isPaused) return;
         this.isPaused = false;
-        
         if (this.audioManager) this.audioManager.unmute();
-        if (this.musicPlayer) this.musicPlayer.resume(); // Возобновляем музыку
+        
+        if (this.musicPlayer) {
+            if (this.currentScreen === 'game') this.musicPlayer.playGameMusic();
+            else if (this.currentScreen === 'intro') this.musicPlayer.playMenuMusic();
+            // В туториале музыка продолжает играть из Intro, так что возобновляем MenuMusic
+            else if (this.currentScreen === 'tutorial') this.musicPlayer.playMenuMusic();
+        }
 
         if (this.screens[this.currentScreen]?.onResume) this.screens[this.currentScreen].onResume();
         this.lastTime = performance.now();
@@ -147,13 +168,33 @@ class Game {
             this.screens[this.currentScreen].cleanup();
         }
 
-        // === УПРАВЛЕНИЕ МУЗЫКОЙ (БЕЗ ПЕРЕСОЗДАНИЯ) ===
+        // === ИНТРО ===
         if (screenName === 'intro') {
+            // ФИКС ЗВУКА: Будим аудио-контекст ЗДЕСЬ (по клику из Startup)
+            if (this.audioManager && !this.isPaused) {
+                this.audioManager.resumeContext().catch(e => {});
+            }
+            
             this.musicPlayer.playMenuMusic();
         }
 
+        // === ТУТОРИАЛ ===
+        if (screenName === 'tutorial') {
+            // Музыку НЕ трогаем, пусть играет трек из меню
+            this.screens.tutorial = new TutorialScreen(this.ctx, {
+                virtualWidth: this.virtualWidth,
+                virtualHeight: this.virtualHeight
+            });
+            
+            this.inputManager.registerScreen('tutorial', (key) => {
+                if (this.isPaused) return;
+                const nextScreen = this.screens.tutorial.handleInput(key);
+                if (nextScreen) this.switchScreen(nextScreen);
+            });
+        }
+
+        // === ИГРА ===
         if (screenName === 'game') {
-            // Будим контекст (на всякий случай)
             if (this.audioManager && !this.isPaused) {
                 this.audioManager.resumeContext().catch(e => {});
             }

@@ -27,10 +27,9 @@ class IntroScreen {
         this.inputBlockTimer = 1.0;
     }
 
-    // Пустые методы, так как музыка теперь в MusicPlayer
-    startMusic() {} 
     onPause() {}
     onResume() {}
+    startMusic() {} // Заглушка (управляется через Game -> MusicPlayer)
     cleanup() {}
 
     update(delta) {
@@ -112,7 +111,9 @@ class IntroScreen {
         if (this.inputBlockTimer > 0) return null;
         if ((key === ' ' || key === 'Enter') && this.pressSpaceVisible) {
             window.game.gameState.reset();
-            return 'game';
+            // ИЗМЕНЕНИЕ: Возвращаем абстрактную команду 'start'
+            // Game.js сам решит, показывать туториал или нет
+            return 'start'; 
         }
         return null;
     }

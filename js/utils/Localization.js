@@ -12,7 +12,16 @@ const dictionary = {
         highScoreHUD: "BEST",
         loading: "CONNECTING TO HQ...",
         bootSystem: "SYSTEM BOOT: CAMERA_OS",
-        bootPrompt: "TAP TO CONNECT"
+        bootPrompt: "TAP TO CONNECT",
+        
+        // --- ТУТОРИАЛ ---
+        tutTitle: "CONTROLS MANUAL",
+        tutDesktop: "DESKTOP",
+        tutMobile: "MOBILE",
+        tutMove: "MOVE",       // Движение
+        tutShoot: "FIRE",      // Стрельба
+        tutSpace: "SPACE",     // Текст на пробеле
+        tutAction: "TAP TO DEPLOY"
     },
     ru: {
         gameTitle: "Агент Камера: Битва Туалетов",
@@ -25,7 +34,16 @@ const dictionary = {
         highScoreHUD: "РЕКОРД",
         loading: "СВЯЗЬ СО ШТАБОМ...",
         bootSystem: "ЗАГРУЗКА: СИСТЕМА КАМЕР",
-        bootPrompt: "НАЖМИ ДЛЯ ПОДКЛЮЧЕНИЯ"
+        bootPrompt: "НАЖМИ ДЛЯ ПОДКЛЮЧЕНИЯ",
+        
+        // --- ТУТОРИАЛ ---
+        tutTitle: "ИНСТРУКЦИЯ",
+        tutDesktop: "КОМПЬЮТЕР",
+        tutMobile: "ТЕЛЕФОН",
+        tutMove: "ДВИЖЕНИЕ",
+        tutShoot: "ОГОНЬ",
+        tutSpace: "ПРОБЕЛ",
+        tutAction: "НАЖМИ, ЧТОБЫ НАЧАТЬ"
     }
 };
 
