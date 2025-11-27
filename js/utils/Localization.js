@@ -47,5 +47,33 @@ const dictionary = {
     }
 };
 
-export const lang = (navigator.language || navigator.userLanguage || 'en').toLowerCase().startsWith('ru') ? 'ru' : 'en';
-export const Strings = dictionary[lang];
+// 1. Определяем язык браузера при старте (чтобы не было пустоты)
+const navLang = (navigator.language || navigator.userLanguage || 'en').toLowerCase();
+export let lang = navLang.startsWith('ru') ? 'ru' : 'en';
+
+// 2. Создаем объект Strings и заполняем его данными. 
+// Мы используем Object.assign, чтобы ссылка на объект не менялась, 
+// но его содержимое можно было перезаписать.
+export const Strings = {};
+Object.assign(Strings, dictionary[lang]);
+
+// 3. Функция для смены языка "на лету" (когда Яндекс SDK загрузится)
+export function setLanguage(newLangCode) {
+    if (!newLangCode) return;
+
+    // Поддерживаем только ru и en. Если придет 'tr', 'de' -> ставим 'en'
+    const supportedLang = newLangCode.toLowerCase().startsWith('ru') ? 'ru' : 'en';
+
+    // Если язык действительно отличается от текущего
+    if (lang !== supportedLang) {
+        console.log(`Localization switch: ${lang} -> ${supportedLang}`);
+        lang = supportedLang;
+        
+        // Очищаем текущие строки
+        for (const key in Strings) {
+            delete Strings[key];
+        }
+        // Записываем новые строки
+        Object.assign(Strings, dictionary[lang]);
+    }
+}

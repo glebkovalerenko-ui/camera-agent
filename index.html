@@ -36,9 +36,11 @@
             /* Критично для отключения скролла и зума */
             touch-action: none;
             outline: none;
+            /* Скрытие курсора для десктопа (улучшает UX, так как есть спрайт прицела) */
+            cursor: none;
         }
         
-        /* Запрет перетаскивания картинок (если логотип будет img) */
+        /* Запрет перетаскивания картинок */
         img {
             pointer-events: none;
             -webkit-user-drag: none;
@@ -63,42 +65,51 @@
             console.warn('Yandex SDK failed to load (Offline mode?)');
         }
 
-        function showAd() {
-            // 1. Mute Audio (Global)
-            if (window.game) {
-                window.game.onPause(); // Используем наш метод паузы
+        // Улучшенная функция показа рекламы
+        // Принимает callback - функцию, которая сработает ПОСЛЕ рекламы
+        window.showAd = function(onCloseCallback) {
+            // 1. Если SDK нет (офлайн) - сразу вызываем колбэк и выходим
+            if (!window.ysdk) {
+                console.log('YSDK not ready, skipping ad');
+                if (onCloseCallback) onCloseCallback();
+                return;
             }
 
-            if (window.ysdk) {
-                window.ysdk.adv.showFullscreenAdv({
-                    callbacks: {
-                        onClose: function(wasShown) {
-                            console.log("Ad closed");
-                            if (window.game) {
-                                window.game.onResume(); // Возвращаем звук
-                            }
-                        },
-                        onError: function(error) {
-                            console.error("Ad error", error);
-                            if (window.game) {
-                                window.game.onResume();
-                            }
+            // 2. Запускаем рекламу
+            window.ysdk.adv.showFullscreenAdv({
+                callbacks: {
+                    // Реклама открылась: СТАВИМ ПАУЗУ
+                    onOpen: function() {
+                        console.log('Ad opened -> Pause Game');
+                        if (window.game) {
+                            window.game.onPause();
                         }
+                    },
+                    // Реклама закрылась: СНИМАЕМ ПАУЗУ и вызываем колбэк
+                    onClose: function(wasShown) {
+                        console.log('Ad closed -> Resume Game');
+                        if (window.game) {
+                            window.game.onResume();
+                        }
+                        if (onCloseCallback) onCloseCallback();
+                    },
+                    // Ошибка (AdBlock/Нет сети): ВАЖНО вести себя так же, как при закрытии
+                    onError: function(error) {
+                        console.warn('Ad error:', error);
+                        if (window.game) {
+                            window.game.onResume();
+                        }
+                        if (onCloseCallback) onCloseCallback();
                     }
-                });
-            } else {
-                console.log('YSDK not loaded, skipping ad');
-                if (window.game) {
-                    window.game.onResume();
                 }
-            }
-        }
+            });
+        };
 
         window.addEventListener('error', function(event) {
             console.error('CRITICAL GAME ERROR:', event.error);
         });
         
-        // Глобальный запрет контекстного меню (для надежности)
+        // Глобальный запрет контекстного меню
         window.addEventListener('contextmenu', function (e) { 
             e.preventDefault(); 
             e.stopPropagation();

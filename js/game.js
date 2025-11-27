@@ -14,7 +14,7 @@ import GameStateManager from './managers/GameStateManager.js';
 import GameScreen from './screens/GameScreen.js';
 import CRTEffect from './effects/CRTEffect.js';
 import AudioManager from './audio/AudioManager.js';
-import { Strings } from './utils/Localization.js';
+import { Strings, setLanguage } from './utils/Localization.js';
 
 class Game {
     constructor() {
@@ -76,7 +76,7 @@ class Game {
             game: null 
         };
 
-        // Флаг для показа туториала только 1 раз
+        // Флаг для показ туториала только 1 раз
         this.tutorialShown = false;
 
         this.currentScreen = 'startup';
@@ -155,7 +155,6 @@ class Game {
         if (this.musicPlayer) {
             if (this.currentScreen === 'game') this.musicPlayer.playGameMusic();
             else if (this.currentScreen === 'intro') this.musicPlayer.playMenuMusic();
-            // В туториале музыка продолжает играть из Intro, так что возобновляем MenuMusic
             else if (this.currentScreen === 'tutorial') this.musicPlayer.playMenuMusic();
         }
 
@@ -170,17 +169,14 @@ class Game {
 
         // === ИНТРО ===
         if (screenName === 'intro') {
-            // ФИКС ЗВУКА: Будим аудио-контекст ЗДЕСЬ (по клику из Startup)
             if (this.audioManager && !this.isPaused) {
                 this.audioManager.resumeContext().catch(e => {});
             }
-            
             this.musicPlayer.playMenuMusic();
         }
 
         // === ТУТОРИАЛ ===
         if (screenName === 'tutorial') {
-            // Музыку НЕ трогаем, пусть играет трек из меню
             this.screens.tutorial = new TutorialScreen(this.ctx, {
                 virtualWidth: this.virtualWidth,
                 virtualHeight: this.virtualHeight
@@ -221,22 +217,32 @@ class Game {
     }
 
     handleGameOver() {
+        // Эта функция выполнится ТОЛЬКО после того, как реклама закроется (или выдаст ошибку)
+        const afterAdCallback = () => {
+            this.screens.intro = new IntroScreen(this.ctx, {
+                virtualWidth: this.virtualWidth,
+                virtualHeight: this.virtualHeight,
+                bgScroller: this.bgScroller,
+                isGameOver: true,
+                finalScore: this.gameState.score,
+                highScore: this.gameState.highScore
+            });
+            this.switchScreen('intro');
+        };
+
+        // Пытаемся показать рекламу
         try {
-            if (window.showAd) window.showAd();
+            if (window.showAd) {
+                window.showAd(afterAdCallback);
+            } else {
+                // Если функции нет (редкий случай), сразу переходим на экран
+                afterAdCallback();
+            }
         } catch (e) {
             console.error("Ad error:", e);
+            // Если что-то упало при вызове, не блокируем игру
+            afterAdCallback();
         }
-
-        this.screens.intro = new IntroScreen(this.ctx, {
-            virtualWidth: this.virtualWidth,
-            virtualHeight: this.virtualHeight,
-            bgScroller: this.bgScroller,
-            isGameOver: true,
-            finalScore: this.gameState.score,
-            highScore: this.gameState.highScore
-        });
-
-        this.switchScreen('intro');
     }
 
     update(timestamp) {
@@ -275,6 +281,18 @@ class Game {
 
         if (!this.gameReadySent) {
             if (window.ysdk && window.ysdk.features && window.ysdk.features.LoadingAPI) {
+                // 1. Настройка языка
+                if (window.ysdk.environment && window.ysdk.environment.i18n) {
+                    setLanguage(window.ysdk.environment.i18n.lang);
+                    if (this.screens.intro && this.screens.intro.reloadLogo) {
+                        this.screens.intro.reloadLogo();
+                    }
+                }
+                
+                // 2. Инициализация облака
+                this.gameState.initCloudSave(window.ysdk);
+
+                // 3. Сигнал готовности
                 window.ysdk.features.LoadingAPI.ready();
                 this.gameReadySent = true;
             }

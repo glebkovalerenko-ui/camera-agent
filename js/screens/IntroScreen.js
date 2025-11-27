@@ -8,11 +8,7 @@ class IntroScreen {
         this.bgScroller = options.bgScroller;
         
         this.logo = new Image();
-        if (lang === 'ru') {
-            this.logo.src = './sprites/logo_ru.png';
-        } else {
-            this.logo.src = './sprites/logo_en.png';
-        }
+        this.reloadLogo(); // Вызываем метод загрузки логотипа
         
         this.alpha = 0;
         this.fadeIn = true;
@@ -25,6 +21,15 @@ class IntroScreen {
         this.finalScore = options.finalScore || 0;
         this.highScore = options.highScore || 0;
         this.inputBlockTimer = 1.0;
+    }
+
+    // Новый метод для обновления картинки логотипа при смене языка
+    reloadLogo() {
+        if (lang === 'ru') {
+            this.logo.src = './sprites/logo_ru.png';
+        } else {
+            this.logo.src = './sprites/logo_en.png';
+        }
     }
 
     onPause() {}
