@@ -145,13 +145,29 @@ class GameScreen {
     }
 
     handlePlayerHit() {
+        // 1. Если неуязвимы — выходим сразу
+        if (this.gameState.playerInvulnerable) {
+            return;
+        }
+
+        // 2. Сначала наносим урон и проверяем смерть
         const isDead = this.gameState.handlePlayerHit();
         console.log(`Player Hit! Lives: ${this.gameState.lives}`);
 
         if (isDead) {
+            // === СЦЕНАРИЙ: СМЕРТЬ ===
+            // Здесь мы НЕ играем звук 'playerHit'.
+            // Вместо этого запускаем логику конца игры.
             this.isGameOver = true;
-            console.log("Dead! Calling onGameOver...");
+            
+            // Можно опционально добавить звук взрыва игрока здесь, если хочется:
+            // this.audioManager.playSound('explosion', { volume: 1.0 });
+            
             this.onGameOver();
+        } else {
+            // === СЦЕНАРИЙ: РАНЕНИЕ (ВЫЖИЛ) ===
+            // Играем звук удара только если остались жизни
+            this.audioManager.playSound('playerHit', { volume: 0.3 });
         }
     }
 

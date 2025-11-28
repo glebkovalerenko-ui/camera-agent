@@ -9,12 +9,19 @@ export default defineConfig({
     open: true,
     host: true
   },
+  // --- ИЗМЕНЕНИЕ: Оптимизация для продакшна ---
+  esbuild: {
+    // Автоматически удаляет console.log и debugger при билде.
+    // Это решает проблему "убийства производительности" логами в цикле update.
+    drop: ['console', 'debugger']
+  },
+  // ---------------------------------------------
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    sourcemap: false, // Можно выключить для релиза
-    copyPublicDir: true,  // Enable copying
-    emptyOutDir: false, // ВЫКЛЮЧАЕМ очистку, так как мы делаем это сами скриптом clean
+    sourcemap: false, 
+    copyPublicDir: true,
+    emptyOutDir: false, 
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html')
@@ -24,9 +31,8 @@ export default defineConfig({
           if (assetInfo.name.includes('sprites/') || 
               assetInfo.name.includes('backgrounds/') ||
               assetInfo.name.includes('audio/')) {
-            return assetInfo.name; // Keep original path
+            return assetInfo.name; 
           }
-          // Handle config files specially
           if (assetInfo.name.includes('/config/')) {
             return assetInfo.name.replace('config/', 'config/');
           }
@@ -41,9 +47,7 @@ export default defineConfig({
   plugins: [{
     name: 'copy-config',
     closeBundle: async () => {
-      // Ensure config directory exists in dist
       await fs.ensureDir('dist/config');
-      // Copy CRT config
       await fs.copy(
         'config/crt-effect.json',
         'dist/config/crt-effect.json'

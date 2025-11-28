@@ -1,20 +1,26 @@
 import VideoRecorder from '../utils/VideoRecorder.js';
 
 class CRTEffect {
-    constructor(targetCanvas, container, audioManager = null) {
+    // qualityScale: 1.0 = Full HD, 0.5 = Half Resolution (для мобилок)
+    constructor(targetCanvas, container, audioManager = null, qualityScale = 1.0) {
         this.gameCanvas = targetCanvas;
         
-        // Создаем WebGL канвас
         this.glCanvas = document.createElement('canvas');
-        // Фиксируем внутреннее разрешение 1:1 с игровым
-        this.glCanvas.width = 1024;
-        this.glCanvas.height = 1024;
         
-        // Стили для наложения поверх игры
+        // ОПТИМИЗАЦИЯ: Рендерим в меньшее разрешение, если нужно
+        this.renderWidth = Math.floor(1024 * qualityScale);
+        this.renderHeight = Math.floor(1024 * qualityScale);
+        
+        this.glCanvas.width = this.renderWidth;
+        this.glCanvas.height = this.renderHeight;
+        
+        // CSS растягивает canvas обратно на весь экран
         this.glCanvas.style.position = 'absolute';
-        this.glCanvas.style.pointerEvents = 'none'; // Клики проходят сквозь
+        this.glCanvas.style.pointerEvents = 'none';
         this.glCanvas.style.transformOrigin = '0 0';
-        
+        // Важно: pixelated, чтобы при растягивании сохранялся ретро-стиль
+        this.glCanvas.style.imageRendering = 'pixelated'; 
+
         container.appendChild(this.glCanvas);
 
         this.gl = this.glCanvas.getContext('webgl2', {
@@ -42,7 +48,6 @@ class CRTEffect {
         this.setupRecordingControls();
     }
 
-    // Синхронизация CSS-размеров с основным канвасом
     syncStyle(sourceCanvas) {
         this.glCanvas.style.width = sourceCanvas.style.width;
         this.glCanvas.style.height = sourceCanvas.style.height;
@@ -59,7 +64,6 @@ class CRTEffect {
     }
 
     createShaders() {
-        // Простой Vertex Shader
         const vsSource = `#version 300 es
             in vec2 a_position;
             in vec2 a_texCoord;
@@ -69,14 +73,12 @@ class CRTEffect {
                 v_texCoord = a_texCoord;
             }`;
 
-        // Fragment Shader (без изменений логики, только uniform map)
         const fsSource = `#version 300 es
             precision highp float;
             
             uniform sampler2D u_image;
             uniform float u_time;
             
-            // Config uniforms
             uniform float u_scanlineIntensity;
             uniform float u_scanlineCount;
             uniform float u_rollingSpeed;
@@ -98,23 +100,19 @@ class CRTEffect {
             void main() {
                 vec2 uv = v_texCoord;
                 
-                // Curvature
                 vec2 curve_uv = uv * 2.0 - 1.0;
                 vec2 offset = curve_uv.yx * curve_uv.yx * vec2(u_curvature);
                 curve_uv += curve_uv * offset;
                 uv = curve_uv * 0.5 + 0.5;
 
-                // Черные края за пределами изгиба
                 if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
                     outColor = vec4(0.0, 0.0, 0.0, 1.0);
                     return;
                 }
 
-                // Scanline
                 float scanline = sin(uv.y * u_scanlineCount + u_time * u_rollingSpeed);
                 scanline = scanline * 0.5 + 0.5;
 
-                // RGB Shift
                 float shift = u_rgbShift;
                 vec2 rUV = uv - vec2(shift, 0.0);
                 vec2 gUV = uv;
@@ -125,13 +123,11 @@ class CRTEffect {
                 color.g = texture(u_image, gUV).g;
                 color.b = texture(u_image, bUV).b;
 
-                // Effects chain
                 color *= u_brightness;
                 color *= 1.0 - (scanline * u_scanlineIntensity);
                 color *= 1.0 - length(curve_uv) * u_vignetteStrength;
                 color *= 1.0 - (sin(u_time * u_flickerSpeed) * u_flickerIntensity);
                 
-                // Noise
                 float noise = rand(uv + vec2(u_time * 0.001));
                 color += (noise - 0.5) * u_noiseAmount;
 
@@ -203,12 +199,11 @@ class CRTEffect {
         if (!this.program || !this.texture) return;
         const gl = this.gl;
         
-        gl.viewport(0, 0, 1024, 1024);
+        gl.viewport(0, 0, this.renderWidth, this.renderHeight);
         gl.clear(gl.COLOR_BUFFER_BIT);
         gl.useProgram(this.program);
 
         gl.bindTexture(gl.TEXTURE_2D, this.texture);
-        // Берем изображение с ИГРОВОГО канваса (который 1024x1024)
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.gameCanvas);
 
         gl.uniform1f(this.timeLoc, time * 0.001);

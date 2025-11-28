@@ -2,6 +2,7 @@ class GameStateManager {
     constructor() {
         this.reset();
         // 1. Сразу берем данные из локального хранилища (Мгновенно)
+        // Это гарантирует, что у игрока есть прогресс даже в оффлайне
         this.highScore = parseInt(localStorage.getItem('highScore') || '0', 10);
         
         // Ссылка на игрока Yandex SDK
@@ -9,14 +10,15 @@ class GameStateManager {
     }
 
     /**
-     * Инициализация облака. Вызывается из game.js, когда SDK готов.
+     * Инициализация облака. Вызывается из game.js
      * Используем { scopes: false }, чтобы НЕ вызывать окно логина принудительно.
      */
     async initCloudSave(ysdk) {
         if (!ysdk) return;
+        if (this.ysdkPlayer) return; // Защита от двойной инициализации
 
         try {
-            // Получаем объект игрока. Если не авторизован - вернет гостя (или ошибку, которую мы ловим)
+            // Получаем объект игрока. Если не авторизован - вернет гостя
             const player = await ysdk.getPlayer({ scopes: false });
             this.ysdkPlayer = player;
 
@@ -36,7 +38,10 @@ class GameStateManager {
                 this.saveToCloud();
             }
         } catch (e) {
-            console.warn('Cloud save init failed (User might be guest or offline):', e);
+            // ВАЖНО: Мы просто логируем ошибку, но не выбрасываем её выше.
+            // Это позволяет игре продолжить работу с локальными данными (localStorage),
+            // которые мы загрузили в конструкторе.
+            console.warn('Cloud save init failed (User might be guest or offline). Using local data.', e);
         }
     }
 
@@ -48,9 +53,9 @@ class GameStateManager {
             this.ysdkPlayer.setData({ 
                 highScore: this.highScore 
             }).then(() => {
-                console.log('High score saved to cloud');
+                // Успешное сохранение (тихое)
             }).catch((e) => {
-                console.warn('Failed to save to cloud:', e);
+                console.warn('Failed to save to cloud (network error?):', e);
             });
         }
     }

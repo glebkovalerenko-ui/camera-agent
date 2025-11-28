@@ -1,7 +1,4 @@
-// === КЭШИРОВАНИЕ: Создаем картинку один раз на всю игру ===
-const alienImage = new Image();
-alienImage.src = './sprites/alien1.png';
-// ==========================================================
+import AssetLoader from './utils/AssetLoader.js';
 
 class Alien {
     constructor(ctx, options = {}) {
@@ -22,9 +19,9 @@ class Alien {
         this.diveVelocityY = 0;
         this.diveVelocityX = 0;
         
-        // ВАЖНО: Используем уже загруженную общую картинку
-        // Вместо создания новой через new Image()
-        this.img = alienImage;
+        // ИЗМЕНЕНИЕ: Используем централизованный загрузчик
+        // Картинка уже должна быть загружена в game.js
+        this.img = AssetLoader.get('./sprites/alien1.png');
     }
 
     update(delta) {
@@ -34,7 +31,7 @@ class Alien {
     }
 
     draw() {
-        // Рисуем только если картинка реально загрузилась
+        // Рисуем только если картинка валидна (загружена и не битая)
         if (this.img.complete && this.img.naturalWidth > 0) {
             const ctx = this.ctx;
             ctx.save();
@@ -49,8 +46,6 @@ class Alien {
             
             ctx.restore();
         } 
-        // Блок else с зеленым квадратом УДАЛЕН.
-        // Если картинка не готова - лучше ничего не рисовать 1 кадр, чем пугать игрока глитчем.
     }
 
     reverseDirection() {

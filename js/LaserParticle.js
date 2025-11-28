@@ -15,13 +15,12 @@ class AlienLaser {
 
     static playShootSound(x, virtualWidth, audioManager) {
         if (!audioManager) {
-            console.warn('AlienLaser: No audioManager provided');
             return;
         }
         
         try {
+            // Check silently to avoid spamming errors if sound isn't loaded yet
             if (!audioManager.sounds.has('alien-laser')) {
-                console.error('alien-laser sound not loaded!');
                 return;
             }
 
@@ -37,7 +36,7 @@ class AlienLaser {
             audioManager.playSound('alien-laser', soundConfig); 
 
         } catch (error) {
-            console.error('AlienLaser: Error playing sound:', error);
+            // Silently fail in production to prevent lag
         }
     }
 

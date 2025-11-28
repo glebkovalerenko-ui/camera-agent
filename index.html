@@ -1,19 +1,28 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
     <title>Camera Agent: Toilet War</title>
     <link rel="icon" type="image/png" href="./sprites/icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-    
-    <!-- Yandex Games SDK -->
     <script src="https://yandex.ru/games/sdk/v2"></script>
     
     <style>
+        /* Раскомментируй, если используешь локальный шрифт */
+        
+        @font-face {
+            font-family: 'Press Start 2P';
+            src: url('./sprites/PressStart2P.woff2') format('woff2');
+            font-display: swap;
+        }
+        
+
         * { 
             margin: 0; 
             padding: 0; 
             box-sizing: border-box;
-            /* Запрет подсветки при тапе на Android/iOS */
             -webkit-tap-highlight-color: transparent;
         }
         
@@ -21,26 +30,23 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background: black;
-            /* Глобальный запрет выделения для iOS */
+            background-color: #000000;
+            
             -webkit-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
             user-select: none;
-            /* Отключение меню лупы и копирования на iOS */
             -webkit-touch-callout: none;
         }
 
         canvas {
             display: block;
-            /* Критично для отключения скролла и зума */
             touch-action: none;
             outline: none;
-            /* Скрытие курсора для десктопа (улучшает UX, так как есть спрайт прицела) */
-            cursor: none;
+            /* ИЗМЕНЕНИЕ: Курсор видимый */
+            cursor: default;
         }
         
-        /* Запрет перетаскивания картинок */
         img {
             pointer-events: none;
             -webkit-user-drag: none;
@@ -50,55 +56,34 @@
     </style>
 </head>
 <body>
-    <!-- oncontextmenu="return false" запрещает ПКМ и долгий тап -->
     <canvas id="gameCanvas" oncontextmenu="return false;" ondragstart="return false;"></canvas>
 
     <script>
         window.ysdk = null;
-        
         try {
             YaGames.init().then(ysdk => {
-                console.log('Yandex SDK initialized');
                 window.ysdk = ysdk;
             });
         } catch(e) {
             console.warn('Yandex SDK failed to load (Offline mode?)');
         }
 
-        // Улучшенная функция показа рекламы
-        // Принимает callback - функцию, которая сработает ПОСЛЕ рекламы
         window.showAd = function(onCloseCallback) {
-            // 1. Если SDK нет (офлайн) - сразу вызываем колбэк и выходим
             if (!window.ysdk) {
-                console.log('YSDK not ready, skipping ad');
                 if (onCloseCallback) onCloseCallback();
                 return;
             }
-
-            // 2. Запускаем рекламу
             window.ysdk.adv.showFullscreenAdv({
                 callbacks: {
-                    // Реклама открылась: СТАВИМ ПАУЗУ
                     onOpen: function() {
-                        console.log('Ad opened -> Pause Game');
-                        if (window.game) {
-                            window.game.onPause();
-                        }
+                        if (window.game && window.game.onPause) window.game.onPause();
                     },
-                    // Реклама закрылась: СНИМАЕМ ПАУЗУ и вызываем колбэк
                     onClose: function(wasShown) {
-                        console.log('Ad closed -> Resume Game');
-                        if (window.game) {
-                            window.game.onResume();
-                        }
+                        if (window.game && window.game.onResume) window.game.onResume();
                         if (onCloseCallback) onCloseCallback();
                     },
-                    // Ошибка (AdBlock/Нет сети): ВАЖНО вести себя так же, как при закрытии
                     onError: function(error) {
-                        console.warn('Ad error:', error);
-                        if (window.game) {
-                            window.game.onResume();
-                        }
+                        if (window.game && window.game.onResume) window.game.onResume();
                         if (onCloseCallback) onCloseCallback();
                     }
                 }
@@ -106,17 +91,15 @@
         };
 
         window.addEventListener('error', function(event) {
-            console.error('CRITICAL GAME ERROR:', event.error);
+            console.error('GAME ERROR:', event.error);
         });
         
-        // Глобальный запрет контекстного меню
         window.addEventListener('contextmenu', function (e) { 
             e.preventDefault(); 
             e.stopPropagation();
             return false;
         }, { passive: false });
     </script>
-
     <script type="module" src="js/game.js"></script>
 </body>
 </html>

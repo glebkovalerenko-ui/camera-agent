@@ -179,24 +179,9 @@ class LaserEngine {
     }
 
     playShootSound(x) {
-        console.log('Attempting to play shoot sound at position:', x); // Debug line
-
         if (!this.audioManager) {
-            console.error('No audio manager available!');
             return;
         }
-
-        // Debug logging for audio manager state
-        console.debug('LaserEngine Audio State:', {
-            hasAudioManager: !!this.audioManager,
-            isInitialized: this.audioManager?.isInitialized,
-            availableSounds: this.audioManager ? Array.from(this.audioManager.sounds?.keys() || []) : [],
-            isFiring: this.firing,
-            position: {
-                x: x,
-                normalized: (x / this.virtualWidth) * 2 - 1
-            }
-        });
 
         try {
             const normalizedX = (x / this.virtualWidth) * 2 - 1;
@@ -208,11 +193,9 @@ class LaserEngine {
                 decay: 0.3 + Math.random() * 0.2
             };
 
-            console.log('Playing sound with config:', soundConfig); // Debug line
-            const result = this.audioManager.playSound('laser', soundConfig);
-            console.log('Sound play result:', result); // Debug line
+            this.audioManager.playSound('laser', soundConfig);
         } catch (error) {
-            console.error('Error playing shoot sound:', error);
+            // Silently fail or minimal warn to avoid lag
         }
     }
 
@@ -228,15 +211,10 @@ class LaserEngine {
     update(delta) {
         // Only emit new particles if firing
         if (this.firing) {
-            console.log('LaserEngine is firing, delta:', delta); // Debug line
             const toEmit = this.emissionRate * delta + this.emissionAccumulator;
             const count = Math.floor(toEmit);
             this.emissionAccumulator = toEmit - count;
             
-            if (count > 0) {
-                console.log(`Creating ${count} laser particles`); // Debug line
-            }
-
             for (let i = 0; i < count; i++) {
                 this.particles.push(new LaserParticle(this.emitterX, this.emitterY));
                 // Ensure sound plays for each particle

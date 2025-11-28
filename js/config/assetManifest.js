@@ -1,17 +1,36 @@
 export const assets = {
   sprites: {
     player: './sprites/player.png',
-    // Add other sprites here
+    alien: './sprites/alien1.png',
+    // Если логотипов нет физически - закомментируй эти строчки, иначе будет ошибка в консоли
+    logoRu: './sprites/logo_ru.png',
+    logoEn: './sprites/logo_en.png'
   },
+  // Строгий список фонов. Файлы 1.png ... 10.png ДОЛЖНЫ лежать в папке backgrounds
+  backgrounds: [
+    './backgrounds/1.png',
+    './backgrounds/3.png',
+    './backgrounds/4.png',
+    './backgrounds/5.png',
+    './backgrounds/6.png',
+    './backgrounds/7.png',
+    './backgrounds/8.png',
+    './backgrounds/9.png',
+    './backgrounds/10.png'
+  ],
   audio: {
     sfx: {
-      laser: './audio/sfx/laser.mp3',
-      explosion: './audio/sfx/explosion.mp3',
-      powerup: './audio/sfx/powerup.mp3'
+      laser: './audio/player-shoot.mp3',
+      explosion: './audio/explosion.mp3',
+      alienLaser: './audio/alien-shoot.mp3',
+      playerHit: './audio/player-hit.mp3'
     },
     music: {
-      title: './audio/music/title.mp3',
-      game: './audio/music/game.mp3'
+      menu: './audio/xeno-war.mp3',
+      game: [
+        './audio/music/game1.mp3',
+        './audio/music/game2.mp3'
+      ]
     }
   }
 };

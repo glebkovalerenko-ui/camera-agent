@@ -1,3 +1,5 @@
+import { assets } from '../config/assetManifest.js'; // 1. Импортируем манифест
+
 class AudioManager {
     static instance = null;
 
@@ -36,13 +38,12 @@ class AudioManager {
         this.hasSilentOscillator = false;
     }
 
-    // Запускаем "тишину", чтобы браузер не блокировал контекст
     startSilentOscillator() {
         if (this.hasSilentOscillator) return;
         try {
             const oscillator = this.context.createOscillator();
             const gain = this.context.createGain();
-            gain.gain.value = 0.001; // Минимальный сигнал
+            gain.gain.value = 0.001; 
             oscillator.connect(gain);
             gain.connect(this.context.destination);
             oscillator.start();
@@ -50,7 +51,6 @@ class AudioManager {
         } catch (e) {}
     }
 
-    // Вызывается один раз при старте игры по клику
     async resumeContext() {
         if (this.context.state === 'suspended' || this.context.state === 'interrupted') {
             try {
@@ -64,30 +64,21 @@ class AudioManager {
         }
     }
 
-    // === ИСПРАВЛЕНИЕ: Только громкость, никакого suspend ===
     mute() {
         if (this.isMuted) return;
-        // Мгновенно убираем громкость в 0
         this.masterGain.gain.setValueAtTime(0, this.context.currentTime);
         this.isMuted = true;
-        // УБРАНО: this.context.suspend(); 
-        // Мы держим контекст "горячим"
     }
 
     unmute() {
         if (!this.isMuted) return;
-        // УБРАНО: this.context.resume();
-        
-        // Восстанавливаем громкость
         this.masterGain.gain.setValueAtTime(this.masterVolume, this.context.currentTime);
         this.isMuted = false;
         
-        // На всякий случай проверяем статус
         if (this.context.state !== 'running') {
             this.context.resume().catch(() => {});
         }
     }
-    // =======================================================
 
     createAudioNodes(source, config = {}) {
         const gainNode = this.context.createGain();
@@ -120,7 +111,7 @@ class AudioManager {
             const audioBuffer = await this.context.decodeAudioData(arrayBuffer);
             this.sounds.set(key, audioBuffer);
         } catch (e) {
-            console.warn(`SFX Error: ${key}`, e);
+            console.warn(`SFX Error: ${key} (${url})`, e);
         }
     }
 
@@ -131,25 +122,57 @@ class AudioManager {
             const audioBuffer = await this.context.decodeAudioData(arrayBuffer);
             this.music.set(key, audioBuffer);
         } catch (e) {
-            console.warn(`Music Error: ${key}`, e);
+            console.warn(`Music Error: ${key} (${url})`, e);
         }
     }
 
+    // --- ИЗМЕНЕНИЕ: Динамическая загрузка из манифеста ---
     async preloadGameSounds() {
-        const sfxPromises = [
-            this.loadSound('explosion', './audio/explosion.mp3'),
-            this.loadSound('laser', './audio/player-shoot.mp3'),
-            this.loadSound('alien-laser', './audio/alien-shoot.mp3')
-        ];
-        
-        const musicPromises = [
-            this.loadMusic('menu_theme', './audio/xeno-war.mp3'),
-            this.loadMusic('game_track_0', './audio/music/game1.mp3'),
-            this.loadMusic('game_track_1', './audio/music/game2.mp3')
-        ];
+        const promises = [];
 
-        await Promise.all([...sfxPromises, ...musicPromises]);
+        // 1. Загрузка SFX
+        if (assets.audio.sfx) {
+            for (const [key, path] of Object.entries(assets.audio.sfx)) {
+                promises.push(this.loadSound(key, path));
+            }
+        }
+
+        // 2. Загрузка Музыки
+        if (assets.audio.music) {
+            for (const [key, value] of Object.entries(assets.audio.music)) {
+                if (Array.isArray(value)) {
+                    // Если это массив треков (как для game music)
+                    value.forEach((path, index) => {
+                        // Создаем ключи game_track_0, game_track_1 и т.д.
+                        // В MusicPlayer.js нужно убедиться, что он использует эти ключи
+                        // (По умолчанию в твоем коде он использует 'game_track_0', так что тут надо подстроиться)
+                        
+                        // ВАЖНО: Твой MusicPlayer ожидает ключи 'game_track_0', 'game_track_1'.
+                        // В манифесте у нас ключ 'game'. 
+                        // Поэтому делаем маппинг:
+                        if (key === 'game') {
+                            promises.push(this.loadMusic(`game_track_${index}`, path));
+                        } else if (key === 'menu') {
+                            // MusicPlayer ждет 'menu_theme'
+                            promises.push(this.loadMusic('menu_theme', path)); // Переименовываем для совместимости
+                        } else {
+                            promises.push(this.loadMusic(key, path));
+                        }
+                    });
+                } else {
+                    // Одиночный файл
+                    if (key === 'menu') {
+                         promises.push(this.loadMusic('menu_theme', value));
+                    } else {
+                         promises.push(this.loadMusic(key, value));
+                    }
+                }
+            }
+        }
+
+        await Promise.all(promises);
         this.isInitialized = true;
+        console.log(`Audio loaded: ${this.sounds.size} SFX, ${this.music.size} Tracks`);
     }
 
     getMusicBuffer(key) {
@@ -159,6 +182,10 @@ class AudioManager {
     playSound(key, config = {}) {
         if (this.isMuted) return null;
         const buffer = this.sounds.get(key);
+        
+        // Полезная отладка, если звука нет (можно потом удалить)
+        // if (!buffer) console.warn(`Sound missing: ${key}`);
+        
         if (!buffer) return null;
 
         try {

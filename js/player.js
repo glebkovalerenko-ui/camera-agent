@@ -1,3 +1,5 @@
+import AssetLoader from './utils/AssetLoader.js';
+
 class Player {
     constructor(ctx, options = {}) {
         this.ctx = ctx;
@@ -22,8 +24,8 @@ class Player {
         // Переменная, чтобы не конфликтовать с мышью при таче
         this.lastInputType = 'keyboard'; // 'keyboard', 'mouse', 'touch'
 
-        this.img = new Image();
-        this.img.src = './sprites/player.png';
+        // ИЗМЕНЕНИЕ: Берем уже загруженную картинку из кеша
+        this.img = AssetLoader.get('./sprites/player.png');
         
         this.setupInput();
         this.velocity = { x: 0, y: 0 };
@@ -168,9 +170,13 @@ class Player {
 
     draw() {
         const ctx = this.ctx;
-        if (this.img.complete) {
+        // AssetLoader возвращает валидный Image, даже если он пустой (в случае ошибки),
+        // поэтому complete всегда true для предзагруженных ассетов.
+        // Доп. проверка на naturalWidth помогает не рисовать битые картинки.
+        if (this.img.complete && this.img.naturalWidth > 0) {
             ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
-        } else {
+        } else if (!this.img.complete) {
+            // Фолбэк на случай, если кто-то забыл сделать preload
             ctx.fillStyle = '#00ff00';
             ctx.fillRect(this.x, this.y, this.width, this.height);
         }
